@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>✈️ TX Demo System 🧳</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000000;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        #assetContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #mainVideo, #mainImage {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            display: none;
+        }
+
+        #statusOverlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            font-size: 14px;
+            z-index: 100;
+            transition: opacity 0.3s;
+            border: 2px solid #4CAF50;
+        }
+
+        #statusOverlay.hidden {
+            opacity: 0;
+        }
+
+        .status-item {
+            margin: 8px 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .status-connected { color: #4CAF50; }
+        .status-disconnected { color: #f44336; }
+
+        #welcomeScreen {
+            text-align: center;
+            color: white;
+            max-width: 700px;
+            padding: 50px;
+            background: rgba(20, 20, 20, 0.8);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        #welcomeScreen h1 {
+            font-size: 4em;
+            margin-bottom: 30px;
+            color: #FFD700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+        }
+
+        #welcomeScreen p {
+            font-size: 1.4em;
+            line-height: 1.8;
+            margin-bottom: 20px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.05); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 100;
+            transition: opacity 0.3s ease;
+        }
+
+        #controls.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #controlToggle {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 101;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 8px 12px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s ease;
+        }
+
+        #controlToggle:hover {
+            background: rgba(0, 0, 0, 0.9);
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+
+        button {
+            background: linear-gradient(45deg, #FF6B6B, #4ECDC4);
+            color: white;
+            border: none;
+            padding: 12px 18px;
+            margin: 5px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+
+        .notification {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px 50px;
+            border-radius: 15px;
+            font-size: 1.8em;
+            z-index: 200;
+            animation: fadeInOut 4s ease-in-out;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+            25% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            75% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            100% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+        }
+
+        .baggage-icon {
+            font-size: 1.2em;
+            margin-right: 8px;
+        }
+
+        #imageTimer {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 16px;
+            z-index: 150;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="assetContainer">
+        <div id="welcomeScreen">
+            <h1>✈️ TX Demo System 🧳</h1>
+            <p>🎯 Interactive Demo Showcase</p>
+            <p class="pulse">📱 Scan RFID tag to trigger demo content...</p>
+            <p style="font-size: 1.1em; color: #FFD700; margin-top: 40px;">
+                🌐 Server: <span id="serverStatus">Connecting...</span>
+            </p>
+        </div>
+
+        <video id="mainVideo" autoplay muted playsinline>
+            Your browser does not support the video tag.
+        </video>
+
+        <img id="mainImage" alt="Demo Content">
+
+        <div id="imageTimer">
+            <span id="timerText">⏱️ 1:00</span>
+        </div>
+    </div>
+
+    <div id="statusOverlay">
+        <div class="status-item"><span class="baggage-icon">🌐</span>Server: <span id="connectionStatus" class="status-disconnected">Disconnected</span></div>
+        <div class="status-item"><span class="baggage-icon">📊</span>Assets Played: <span id="assetCount">0</span></div>
+        <div class="status-item"><span class="baggage-icon">🏷️</span>Last Tag: <span id="lastCard">None</span></div>
+        <div class="status-item"><span class="baggage-icon">🎬</span>Current Asset: <span id="currentAsset">None</span></div>
+        <div class="status-item"><span class="baggage-icon">⏰</span>Last Update: <span id="lastUpdate">Never</span></div>
+    </div>
+
+    <div id="controlToggle" onclick="toggleControls()">⚙️</div>
+
+    <div id="controls" class="hidden">
+        <button onclick="toggleStatus()">📊 Status</button>
+        <button onclick="reconnect()">🔄 Reconnect</button>
+        <button onclick="goFullscreen()">🖥️ Fullscreen</button>
+        <button onclick="toggleAdvanced()" id="advancedToggle">🔧 Advanced</button>
+        <div id="advancedControls" style="display: none;">
+            <button onclick="testAsset('video')">🎬 Test Video</button>
+            <button onclick="testAsset('image')">🖼️ Test Image</button>
+        </div>
+    </div>
+
+    <script>
+        class ExhibitionAssetPlayer {
+            constructor() {
+                this.serverHost = window.location.hostname || 'localhost';
+                this.serverPort = window.location.port || 8080;
+                this.pollInterval = 1000;
+                this.assetCount = 0;
+                this.lastCard = 'None';
+                this.currentAsset = 'None';
+                this.isConnected = false;
+                this.lastAssetTimestamp = null;
+                this.imageDisplayDuration = 60000; // 1 minute for images
+                this.videoWaitDuration = 60000; // 1 minute after video completes
+                this.imageTimer = null;
+                this.videoTimer = null;
+                
+                this.initElements();
+                this.startPolling();
+            }
+            
+            initElements() {
+                this.welcomeScreen = document.getElementById('welcomeScreen');
+                this.mainVideo = document.getElementById('mainVideo');
+                this.mainImage = document.getElementById('mainImage');
+                this.imageTimerEl = document.getElementById('imageTimer');
+                this.timerText = document.getElementById('timerText');
+                this.statusOverlay = document.getElementById('statusOverlay');
+                this.connectionStatus = document.getElementById('connectionStatus');
+                this.serverStatus = document.getElementById('serverStatus');
+                this.assetCountEl = document.getElementById('assetCount');
+                this.lastCardEl = document.getElementById('lastCard');
+                this.currentAssetEl = document.getElementById('currentAsset');
+                this.lastUpdateEl = document.getElementById('lastUpdate');
+                
+                // Video event listeners
+                this.mainVideo.addEventListener('ended', () => {
+                    this.startVideoWaitTimer();
+                });
+                this.mainVideo.addEventListener('error', (e) => {
+                    this.showNotification('Video Error', 'error');
+                    this.showWelcomeScreen();
+                });
+            }
+            
+            async startPolling() {
+                this.poll();
+                setInterval(() => this.poll(), this.pollInterval);
+            }
+            
+            async poll() {
+                try {
+                    const serverUrl = `http://${this.serverHost}:${this.serverPort}/status`;
+                    const response = await fetch(serverUrl);
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.updateConnectionStatus(true);
+                        this.updateServerInfo(data);
+                        
+                        if (data.last_asset && data.last_asset.timestamp !== this.lastAssetTimestamp) {
+                            this.lastAssetTimestamp = data.last_asset.timestamp;
+                            this.playAsset(data.last_asset.asset_file, data.last_asset.asset_type, data.last_asset.card_id);
+                        }
+                        
+                        this.lastUpdateEl.textContent = new Date().toLocaleTimeString();
+                    } else {
+                        this.updateConnectionStatus(false);
+                    }
+                } catch (error) {
+                    this.updateConnectionStatus(false);
+                }
+            }
+            
+            updateConnectionStatus(connected) {
+                this.isConnected = connected;
+                this.connectionStatus.textContent = connected ? 'Connected' : 'Disconnected';
+                this.connectionStatus.className = connected ? 'status-connected' : 'status-disconnected';
+                this.serverStatus.textContent = connected ? 'Connected' : 'Disconnected';
+                this.serverStatus.style.color = connected ? '#4CAF50' : '#f44336';
+            }
+            
+            updateServerInfo(data) {
+                this.assetCount = data.assets_played || 0;
+                this.assetCountEl.textContent = this.assetCount;
+            }
+            
+            async playAsset(assetFile, assetType, cardId = 'Unknown') {
+                this.lastCard = cardId;
+                this.currentAsset = assetFile;
+                this.lastCardEl.textContent = cardId;
+                this.currentAssetEl.textContent = assetFile;
+                
+                const emoji = assetType === 'video' ? '🎬' : '🖼️';
+                this.showNotification(`${emoji} ${assetType}: ${assetFile}`, 'info');
+                
+                this.welcomeScreen.style.display = 'none';
+                this.clearTimers();
+                
+                if (assetType === 'video') {
+                    await this.playVideo(assetFile);
+                } else if (assetType === 'image') {
+                    await this.playImage(assetFile);
+                } else {
+                    this.showWelcomeScreen();
+                }
+            }
+
+            async playVideo(videoFile) {
+                this.mainImage.style.display = 'none';
+                this.mainImage.src = '';
+                this.imageTimerEl.style.display = 'none';
+                this.clearTimers();
+                
+                this.mainVideo.style.display = 'none';
+                this.mainVideo.src = '';
+                try {
+                    this.mainVideo.pause();
+                } catch (e) {}
+                
+                const videoUrl = `http://${this.serverHost}:${this.serverPort}/assets/${videoFile}`;
+                
+                this.mainVideo.load();
+                this.mainVideo.src = videoUrl;
+                this.mainVideo.style.display = 'block';
+                
+                try {
+                    await new Promise((resolve, reject) => {
+                        const onCanPlay = () => {
+                            this.mainVideo.removeEventListener('canplay', onCanPlay);
+                            this.mainVideo.removeEventListener('error', onError);
+                            resolve();
+                        };
+                        
+                        const onError = (e) => {
+                            this.mainVideo.removeEventListener('canplay', onCanPlay);
+                            this.mainVideo.removeEventListener('error', onError);
+                            reject(new Error(`Video failed to load: ${videoFile}`));
+                        };
+                        
+                        this.mainVideo.addEventListener('canplay', onCanPlay);
+                        this.mainVideo.addEventListener('error', onError);
+                        
+                        this.mainVideo.load();
+                        
+                        setTimeout(() => {
+                            this.mainVideo.removeEventListener('canplay', onCanPlay);
+                            this.mainVideo.removeEventListener('error', onError);
+                            reject(new Error('Video load timeout'));
+                        }, 15000);
+                    });
+                    
+                    const playPromise = this.mainVideo.play();
+                    if (playPromise !== undefined) {
+                        await playPromise;
+                    }
+                    
+                } catch (error) {
+                    this.showNotification(`Failed to play video: ${error.message}`, 'error');
+                    setTimeout(() => this.showWelcomeScreen(), 2000);
+                }
+            }
+
+            async playImage(imageFile) {
+                this.mainVideo.style.display = 'none';
+                try {
+                    this.mainVideo.pause();
+                } catch (e) {}
+                this.mainVideo.load();
+                
+                this.mainImage.style.display = 'none';
+                this.mainImage.src = '';
+                
+                const imageUrl = `http://${this.serverHost}:${this.serverPort}/assets/${imageFile}`;
+                
+                try {
+                    const response = await fetch(imageUrl, { method: 'GET' });
+                    if (!response.ok) {
+                        throw new Error(`Image not found: ${response.status} ${response.statusText}`);
+                    }
+                } catch (error) {
+                    this.showNotification(`Image not accessible: ${error.message}`, 'error');
+                    setTimeout(() => this.showWelcomeScreen(), 2000);
+                    return;
+                }
+                
+                this.mainImage.src = imageUrl;
+                this.mainImage.style.display = 'block';
+                this.startImageTimer();
+            }
+
+            startImageTimer() {
+                let timeLeft = this.imageDisplayDuration / 1000;
+                this.imageTimerEl.style.display = 'block';
+                
+                const updateTimer = () => {
+                    const minutes = Math.floor(timeLeft / 60);
+                    const seconds = Math.ceil(timeLeft % 60);
+                    this.timerText.textContent = `⏱️ ${minutes}:${seconds.toString().padStart(2, '0')}`;
+                    timeLeft -= 0.1;
+                    
+                    if (timeLeft <= 0) {
+                        this.showWelcomeScreen();
+                    }
+                };
+                
+                updateTimer();
+                this.imageTimer = setInterval(updateTimer, 100);
+            }
+
+            startVideoWaitTimer() {
+                let timeLeft = this.videoWaitDuration / 1000;
+                this.imageTimerEl.style.display = 'block';
+                
+                const updateTimer = () => {
+                    const minutes = Math.floor(timeLeft / 60);
+                    const seconds = Math.ceil(timeLeft % 60);
+                    this.timerText.textContent = `⏱️ ${minutes}:${seconds.toString().padStart(2, '0')}`;
+                    timeLeft -= 0.1;
+                    
+                    if (timeLeft <= 0) {
+                        this.showWelcomeScreen();
+                    }
+                };
+                
+                updateTimer();
+                this.videoTimer = setInterval(updateTimer, 100);
+            }
+
+            clearTimers() {
+                if (this.imageTimer) {
+                    clearInterval(this.imageTimer);
+                    this.imageTimer = null;
+                }
+                if (this.videoTimer) {
+                    clearInterval(this.videoTimer);
+                    this.videoTimer = null;
+                }
+                this.imageTimerEl.style.display = 'none';
+            }
+            
+            showWelcomeScreen() {
+                this.mainVideo.style.display = 'none';
+                try {
+                    this.mainVideo.pause();
+                } catch (e) {}
+                this.mainVideo.load();
+                
+                this.mainImage.style.display = 'none';
+                this.mainImage.src = '';
+                
+                this.clearTimers();
+                
+                this.welcomeScreen.style.display = 'block';
+                this.currentAsset = 'None';
+                this.currentAssetEl.textContent = 'None';
+            }
+
+            showNotification(message, type = 'info') {
+                const existing = document.querySelectorAll('.notification');
+                existing.forEach(n => n.remove());
+
+                const notification = document.createElement('div');
+                notification.className = 'notification';
+                notification.textContent = message;
+                
+                if (type === 'error') {
+                    notification.style.background = 'rgba(244, 67, 54, 0.9)';
+                }
+                
+                document.body.appendChild(notification);
+                
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                }, 3000);
+            }
+        }
+        
+        // Global functions for controls
+        function toggleControls() {
+            const controls = document.getElementById('controls');
+            controls.classList.toggle('hidden');
+        }
+
+        function toggleAdvanced() {
+            const advancedControls = document.getElementById('advancedControls');
+            const toggleButton = document.getElementById('advancedToggle');
+            
+            if (advancedControls.style.display === 'none') {
+                advancedControls.style.display = 'block';
+                toggleButton.textContent = '🔧 Hide Advanced';
+            } else {
+                advancedControls.style.display = 'none';
+                toggleButton.textContent = '🔧 Advanced';
+            }
+        }
+        
+        function toggleStatus() {
+            const overlay = document.getElementById('statusOverlay');
+            overlay.classList.toggle('hidden');
+        }
+        
+        function testAsset(type) {
+            if (window.player) {
+                const testFile = type === 'video' ? '1.mov' : '2.jpg';
+                window.player.playAsset(testFile, type, 'TEST_CARD');
+            }
+        }
+        
+        function reconnect() {
+            if (window.player) {
+                window.player.updateConnectionStatus(false);
+                setTimeout(() => window.player.poll(), 1000);
+            }
+        }
+
+        function goFullscreen() {
+            if (document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen();
+            } else if (document.documentElement.webkitRequestFullscreen) {
+                document.documentElement.webkitRequestFullscreen();
+            } else if (document.documentElement.msRequestFullscreen) {
+                document.documentElement.msRequestFullscreen();
+            }
+        }
+        
+        // Initialize player when page loads
+        window.addEventListener('load', () => {
+            window.player = new ExhibitionAssetPlayer();
+        });
+        
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && window.player) {
+                window.player.poll();
+            }
+        });
+
+        // Handle keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key.toLowerCase() === 'c') {
+                toggleControls();
+            }
+            if (e.key.toLowerCase() === 's') {
+                toggleStatus();
+            }
+            if (e.key.toLowerCase() === 'f') {
+                goFullscreen();
+            }
+            if (e.key === 'Escape') {
+                document.getElementById('controls').classList.add('hidden');
+                document.getElementById('statusOverlay').classList.add('hidden');
+            }
+        });
+
+        // Handle fullscreen changes
+        document.addEventListener('fullscreenchange', () => {
+            console.log('Fullscreen changed:', document.fullscreenElement ? 'Entered' : 'Exited');
+        });
+    </script>
+</body>
+</html>
