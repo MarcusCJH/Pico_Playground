@@ -196,6 +196,47 @@
             z-index: 150;
             display: none;
         }
+
+        /* RFID Card Simulation UI */
+        #rfidSimulator {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        #rfidSimulator h3 {
+            margin-bottom: 10px;
+            color: #4CAF50;
+            font-size: 14px;
+        }
+
+        .rfid-card {
+            background: linear-gradient(45deg, #2196F3, #00BCD4);
+            padding: 10px;
+            margin: 8px 0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            font-size: 12px;
+        }
+
+        .rfid-card:hover {
+            transform: translateX(-5px);
+            box-shadow: 5px 5px 15px rgba(0,0,0,0.3);
+        }
+
+        .rfid-card.active {
+            background: linear-gradient(45deg, #4CAF50, #8BC34A);
+        }
+
+        .rfid-card small {
+            display: block;
+            opacity: 0.8;
+            font-size: 10px;
+        }
     </style>
 </head>
 <body>
@@ -236,6 +277,17 @@
         <button onclick="goFullscreen()">🖥️ Fullscreen</button>
         <button onclick="toggleAdvanced()" id="advancedToggle">🔧 Advanced</button>
         <div id="advancedControls" style="display: none;">
+            <div id="rfidSimulator">
+                <h3>🏷️ RFID Card Simulation</h3>
+                <div class="rfid-card" onclick="simulateRfid('3800132D9B9D')">
+                    Card 1 (Video)
+                    <small>3800132D9B9D</small>
+                </div>
+                <div class="rfid-card" onclick="simulateRfid('38001370E9B2')">
+                    Card 2 (Image)
+                    <small>38001370E9B2</small>
+                </div>
+            </div>
             <button onclick="testAsset('video')">🎬 Test Video</button>
             <button onclick="testAsset('image')">🖼️ Test Image</button>
         </div>
@@ -335,6 +387,14 @@
                 
                 const emoji = assetType === 'video' ? '🎬' : '🖼️';
                 this.showNotification(`${emoji} ${assetType}: ${assetFile}`, 'info');
+                
+                // Highlight active RFID card
+                document.querySelectorAll('.rfid-card').forEach(card => {
+                    if (card.textContent.includes(cardId)) {
+                        card.classList.add('active');
+                        setTimeout(() => card.classList.remove('active'), 2000);
+                    }
+                });
                 
                 this.welcomeScreen.style.display = 'none';
                 this.clearTimers();
@@ -591,6 +651,9 @@
             if (e.key.toLowerCase() === 'f') {
                 goFullscreen();
             }
+            if (e.key.toLowerCase() === 'a') {
+                toggleAdvanced();
+            }
             if (e.key === 'Escape') {
                 document.getElementById('controls').classList.add('hidden');
                 document.getElementById('statusOverlay').classList.add('hidden');
@@ -601,6 +664,37 @@
         document.addEventListener('fullscreenchange', () => {
             console.log('Fullscreen changed:', document.fullscreenElement ? 'Entered' : 'Exited');
         });
+
+        // RFID simulation function
+        async function simulateRfid(cardId) {
+            try {
+                const response = await fetch(`http://${window.player.serverHost}:${window.player.serverPort}/play`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        card_id: cardId,
+                        asset_file: cardId === '3800132D9B9D' ? '1.mov' : '2.jpg',
+                        timestamp: new Date().toISOString()
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to trigger asset');
+                }
+
+                // Force an immediate poll to update the UI
+                if (window.player) {
+                    window.player.poll();
+                }
+            } catch (error) {
+                console.error('RFID simulation error:', error);
+                if (window.player) {
+                    window.player.showNotification('Failed to simulate RFID scan', 'error');
+                }
+            }
+        }
     </script>
 </body>
 </html>
