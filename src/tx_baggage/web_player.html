@@ -197,6 +197,142 @@
             display: none;
         }
 
+        /* Navigation Controls */
+        #navigationControls {
+            position: fixed;
+            bottom: 80px;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            padding: 0 20px;
+            z-index: 150;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            opacity: 0;
+            visibility: hidden;
+        }
+
+        #navigationControls.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        #navigationControls button {
+            pointer-events: auto;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 12px 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(5px);
+            min-width: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        #navigationControls button:hover:not(:disabled) {
+            background: rgba(0, 0, 0, 0.9);
+            border-color: rgba(255, 255, 255, 0.5);
+            transform: scale(1.05);
+        }
+
+        #navigationControls button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Toggle switch styles */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #4CAF50;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        .toggle-label {
+            display: flex;
+            align-items: center;
+            color: white;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+
+        /* Mobile-friendly adjustments */
+        @media (max-width: 768px) {
+            #navigationControls {
+                bottom: 20px;
+                padding: 0 10px;
+            }
+
+            #navigationControls button {
+                padding: 10px 15px;
+                min-width: 100px;
+                font-size: 12px;
+            }
+
+            #controls {
+                bottom: 70px;
+            }
+        }
+
+        /* Ensure controls don't overlap */
+        #controls.with-navigation {
+            bottom: 140px;
+        }
+
+        @media (max-width: 768px) {
+            #controls.with-navigation {
+                bottom: 90px;
+            }
+        }
+
         /* RFID Card Simulation UI */
         #rfidSimulator {
             margin-top: 10px;
@@ -287,6 +423,10 @@
                     Card 2 (Image)
                     <small>38001370E9B2</small>
                 </div>
+                <div class="rfid-card" onclick="simulateRfid('38001370E9B3')">
+                    Card 3 (Video)
+                    <small>38001370E9B3</small>
+                </div>
             </div>
             <button onclick="testAsset('video')">🎬 Test Video</button>
             <button onclick="testAsset('image')">🖼️ Test Image</button>
@@ -309,6 +449,10 @@
                 this.imageTimer = null;
                 this.videoTimer = null;
                 
+                // Add history tracking
+                this.assetHistory = [];
+                this.currentHistoryIndex = -1;
+                
                 this.initElements();
                 this.startPolling();
             }
@@ -327,6 +471,9 @@
                 this.currentAssetEl = document.getElementById('currentAsset');
                 this.lastUpdateEl = document.getElementById('lastUpdate');
                 
+                // Initialize navigation controls
+                this.initNavigationControls();
+                
                 // Video event listeners
                 this.mainVideo.addEventListener('ended', () => {
                     this.startVideoWaitTimer();
@@ -336,7 +483,130 @@
                     this.showWelcomeScreen();
                 });
             }
-            
+
+            initNavigationControls() {
+                // Create navigation container
+                const navContainer = document.createElement('div');
+                navContainer.id = 'navigationControls';
+                navContainer.innerHTML = `
+                    <button id="prevAsset" onclick="window.player.navigateHistory('back')" disabled>
+                        <span>⬅️</span><span>Previous</span>
+                    </button>
+                    <button id="nextAsset" onclick="window.player.navigateHistory('forward')" disabled>
+                        <span>Next</span><span>➡️</span>
+                    </button>
+                `;
+                document.body.appendChild(navContainer);
+
+                this.prevButton = document.getElementById('prevAsset');
+                this.nextButton = document.getElementById('nextAsset');
+
+                // Add navigation toggle to advanced controls
+                const advancedControls = document.getElementById('advancedControls');
+                const toggleContainer = document.createElement('div');
+                toggleContainer.className = 'toggle-label';
+                toggleContainer.innerHTML = `
+                    Navigation Controls
+                    <label class="switch">
+                        <input type="checkbox" id="navigationToggle" onchange="window.player.toggleNavigation(this.checked)">
+                        <span class="slider"></span>
+                    </label>
+                `;
+                advancedControls.insertBefore(toggleContainer, advancedControls.firstChild);
+
+                // Update RFID simulator with third card
+                const rfidSimulator = document.getElementById('rfidSimulator');
+                rfidSimulator.innerHTML = `
+                    <h3>🏷️ RFID Card Simulation</h3>
+                    <div class="rfid-card" onclick="simulateRfid('3800132D9B9D')">
+                        Card 1 (Video)
+                        <small>3800132D9B9D</small>
+                    </div>
+                    <div class="rfid-card" onclick="simulateRfid('38001370E9B2')">
+                        Card 2 (Image)
+                        <small>38001370E9B2</small>
+                    </div>
+                    <div class="rfid-card" onclick="simulateRfid('38001370E9B3')">
+                        Card 3 (Video)
+                        <small>38001370E9B3</small>
+                    </div>
+                `;
+            }
+
+            updateNavigationButtons() {
+                const canGoPrev = this.currentHistoryIndex > 0;
+                const canGoNext = this.currentHistoryIndex < this.assetHistory.length - 1;
+
+                this.prevButton.disabled = !canGoPrev;
+                this.nextButton.disabled = !canGoNext;
+
+                console.log('Navigation state updated:', {
+                    currentIndex: this.currentHistoryIndex,
+                    historyLength: this.assetHistory.length,
+                    canGoPrev,
+                    canGoNext,
+                    history: this.assetHistory
+                });
+            }
+
+            async navigateHistory(direction) {
+                console.log('Starting navigation:', {
+                    direction,
+                    currentIndex: this.currentHistoryIndex,
+                    historyLength: this.assetHistory.length,
+                    history: this.assetHistory
+                });
+
+                let targetIndex = this.currentHistoryIndex;
+                
+                if (direction === 'back' && this.currentHistoryIndex > 0) {
+                    targetIndex--;
+                } else if (direction === 'forward' && this.currentHistoryIndex < this.assetHistory.length - 1) {
+                    targetIndex++;
+                } else {
+                    console.log('Cannot navigate:', {
+                        direction,
+                        currentIndex: this.currentHistoryIndex,
+                        historyLength: this.assetHistory.length
+                    });
+                    return;
+                }
+
+                const historyItem = this.assetHistory[targetIndex];
+                console.log('Navigating to:', {
+                    targetIndex,
+                    historyItem,
+                    currentHistoryLength: this.assetHistory.length
+                });
+                
+                // Update the current index before sending the request
+                this.currentHistoryIndex = targetIndex;
+                
+                // Use the same endpoint as RFID triggers
+                try {
+                    await fetch(`http://${this.serverHost}:${this.serverPort}/play`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            card_id: historyItem.card_id,
+                            asset_file: historyItem.asset_file,
+                            timestamp: new Date().toISOString()
+                        })
+                    });
+
+                    // Update navigation buttons immediately after sending request
+                    this.updateNavigationButtons();
+                } catch (error) {
+                    // Revert the index if the request fails
+                    this.currentHistoryIndex = targetIndex - (direction === 'forward' ? 1 : -1);
+                    console.error('Navigation trigger error:', error);
+                    this.showNotification('Failed to trigger navigation', 'error');
+                    this.updateNavigationButtons();
+                }
+            }
+
             async startPolling() {
                 this.poll();
                 setInterval(() => this.poll(), this.pollInterval);
@@ -352,11 +622,16 @@
                         this.updateConnectionStatus(true);
                         this.updateServerInfo(data);
                         
+                        // Handle asset updates (from both RFID and navigation)
                         if (data.last_asset && data.last_asset.timestamp !== this.lastAssetTimestamp) {
                             this.lastAssetTimestamp = data.last_asset.timestamp;
-                            this.playAsset(data.last_asset.asset_file, data.last_asset.asset_type, data.last_asset.card_id);
+                            await this.playAsset(
+                                data.last_asset.asset_file, 
+                                data.last_asset.asset_type, 
+                                data.last_asset.card_id
+                            );
                         }
-                        
+
                         this.lastUpdateEl.textContent = new Date().toLocaleTimeString();
                     } else {
                         this.updateConnectionStatus(false);
@@ -379,7 +654,43 @@
                 this.assetCountEl.textContent = this.assetCount;
             }
             
-            async playAsset(assetFile, assetType, cardId = 'Unknown') {
+            async playAsset(assetFile, assetType, cardId = 'Unknown', addToHistory = true) {
+                // Add to history if it's a new asset
+                if (addToHistory) {
+                    const newAsset = { 
+                        asset_file: assetFile, 
+                        asset_type: assetType, 
+                        card_id: cardId 
+                    };
+
+                    // Find if this asset already exists in history
+                    const existingIndex = this.assetHistory.findIndex(item => 
+                        item.asset_file === assetFile && 
+                        item.card_id === cardId
+                    );
+
+                    if (existingIndex !== -1) {
+                        // If we're moving to an existing asset, just update the index
+                        this.currentHistoryIndex = existingIndex;
+                    } else {
+                        // If we're not at the end of history, truncate forward history
+                        if (this.currentHistoryIndex < this.assetHistory.length - 1) {
+                            this.assetHistory = this.assetHistory.slice(0, this.currentHistoryIndex + 1);
+                        }
+                        
+                        // Add new asset to history
+                        this.assetHistory.push(newAsset);
+                        this.currentHistoryIndex = this.assetHistory.length - 1;
+                    }
+
+                    console.log('History updated:', {
+                        newAsset,
+                        currentIndex: this.currentHistoryIndex,
+                        historyLength: this.assetHistory.length,
+                        history: this.assetHistory
+                    });
+                }
+
                 this.lastCard = cardId;
                 this.currentAsset = assetFile;
                 this.lastCardEl.textContent = cardId;
@@ -388,6 +699,15 @@
                 const emoji = assetType === 'video' ? '🎬' : '🖼️';
                 this.showNotification(`${emoji} ${assetType}: ${assetFile}`, 'info');
                 
+                // Update navigation visibility if enabled
+                const navToggle = document.getElementById('navigationToggle');
+                if (navToggle && navToggle.checked) {
+                    this.toggleNavigation(true);
+                }
+                
+                // Update navigation buttons state
+                this.updateNavigationButtons();
+                
                 // Highlight active RFID card
                 document.querySelectorAll('.rfid-card').forEach(card => {
                     if (card.textContent.includes(cardId)) {
@@ -395,7 +715,7 @@
                         setTimeout(() => card.classList.remove('active'), 2000);
                     }
                 });
-                
+
                 this.welcomeScreen.style.display = 'none';
                 this.clearTimers();
                 
@@ -578,6 +898,20 @@
                     }
                 }, 3000);
             }
+
+            toggleNavigation(enabled) {
+                const navControls = document.getElementById('navigationControls');
+                if (enabled && this.assetHistory.length > 1) {
+                    navControls.classList.add('visible');
+                    console.log('Navigation enabled:', {
+                        historyLength: this.assetHistory.length,
+                        currentIndex: this.currentHistoryIndex
+                    });
+                } else {
+                    navControls.classList.remove('visible');
+                }
+                this.updateNavigationButtons();
+            }
         }
         
         // Global functions for controls
@@ -658,6 +992,13 @@
                 document.getElementById('controls').classList.add('hidden');
                 document.getElementById('statusOverlay').classList.add('hidden');
             }
+            // Add navigation shortcuts
+            if (e.key === 'ArrowLeft' && window.player) {
+                window.player.navigateHistory('back');
+            }
+            if (e.key === 'ArrowRight' && window.player) {
+                window.player.navigateHistory('forward');
+            }
         });
 
         // Handle fullscreen changes
@@ -668,6 +1009,22 @@
         // RFID simulation function
         async function simulateRfid(cardId) {
             try {
+                // Determine which asset file to play based on the card ID
+                let assetFile;
+                switch (cardId) {
+                    case '3800132D9B9D':
+                        assetFile = '1.mov';
+                        break;
+                    case '38001370E9B2':
+                        assetFile = '2.jpg';
+                        break;
+                    case '38001370E9B3':
+                        assetFile = '3.mov';
+                        break;
+                    default:
+                        throw new Error('Unknown card ID');
+                }
+
                 const response = await fetch(`http://${window.player.serverHost}:${window.player.serverPort}/play`, {
                     method: 'POST',
                     headers: {
@@ -675,7 +1032,7 @@
                     },
                     body: JSON.stringify({
                         card_id: cardId,
-                        asset_file: cardId === '3800132D9B9D' ? '1.mov' : '2.jpg',
+                        asset_file: assetFile,
                         timestamp: new Date().toISOString()
                     })
                 });
