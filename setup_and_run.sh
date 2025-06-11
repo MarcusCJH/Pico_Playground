@@ -28,7 +28,6 @@ cd "$ASSET_DIR"
 chmod +x asset_server.py
 
 # Run server
-echo "Server starting at http://localhost:8080"
 echo "Press Ctrl+C to stop"
 echo ""
 python3 asset_server.py
