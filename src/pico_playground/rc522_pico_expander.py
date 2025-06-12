@@ -1,15 +1,24 @@
 """
-RC522 RFID Reader Implementation for ReadPI Board
-Connections:
-- SDA  -> GP1 (SPI0 CSn)
-- SCK  -> GP2 (SPI0 SCK)
-- MOSI -> GP3 (SPI0 TX)
-- MISO -> GP0 (SPI0 RX)
-- GND  -> GND
-- 3.3V -> 3.3V
+RC522 RFID Reader Implementation for Pico Dual Expander Board
+This program demonstrates RFID card reading with visual and audio feedback.
+
+Pin Layout and Color Coding (Left Side Organization):
+
+RC522 RFID Reader Connections:
+- VCC/3.3V -> 3.3V [RED]     (Power)
+- GND      -> GND  [BLACK]   (Ground)
+- RST      -> GP5  [YELLOW]  (Reset pin)
+- SDA/CS   -> GP1  [BLUE]    (SPI Chip Select)
+- SCK      -> GP2  [GREEN]   (SPI Clock)
+- MOSI     -> GP3  [ORANGE]  (SPI Master Out Slave In)
+- MISO     -> GP0  [WHITE]   (SPI Master In Slave Out)
+
+Feedback Components:
+- LED      -> GP21 [PURPLE]  (Visual feedback - already on board)
+- Buzzer   -> GP15 [BROWN]   (Audio feedback - optional)
 """
 
-from machine import Pin, SPI
+from machine import Pin, SPI, PWM
 import time
 
 class MFRC522:
@@ -110,13 +119,21 @@ class MFRC522:
     Reserved33 = 0x3E
     Reserved34 = 0x3F
 
-    def __init__(self, spi, cs):
+    def __init__(self, spi, cs, rst=None):
         self.spi = spi
         self.cs = cs
+        self.rst = rst
         self.cs.value(1)
+        if self.rst:
+            self.rst.value(1)
         self.MFRC522_Init()
 
     def MFRC522_Reset(self):
+        if self.rst:
+            self.rst.value(0)
+            time.sleep(0.1)
+            self.rst.value(1)
+            time.sleep(0.1)
         self.Write_MFRC522(self.CommandReg, self.PCD_RESETPHASE)
 
     def Write_MFRC522(self, addr, val):
@@ -299,19 +316,95 @@ class MFRC522:
         self.AntennaOn()
         print("MFRC522 Initialized")
 
+class PicoExpanderRFID:
+    def __init__(self):
+        # Initialize feedback components
+        self.led = Pin(21, Pin.OUT)  # External LED
+        self.onboard_led = Pin("LED", Pin.OUT)  # Built-in Pico W LED
+        
+        # Initialize buzzer (optional)
+        try:
+            self.buzzer = PWM(Pin(15))
+            self.buzzer.duty_u16(0)
+            self.has_buzzer = True
+        except:
+            self.has_buzzer = False
+            print("Buzzer not available on GP15")
+        
+        print("Pico Expander RFID Reader initialized!")
+        print("\nComponent Connections:")
+        print("RC522 RFID Reader:")
+        print("- VCC/3.3V -> 3.3V [RED]")
+        print("- GND      -> GND  [BLACK]")
+        print("- RST      -> GP5  [YELLOW]")
+        print("- SDA/CS   -> GP1  [BLUE]")
+        print("- SCK      -> GP2  [GREEN]")
+        print("- MOSI     -> GP3  [ORANGE]")
+        print("- MISO     -> GP0  [WHITE]")
+        print("\nFeedback:")
+        print("- External LED -> GP21 [PURPLE]")
+        print("- Built-in LED -> Pico W onboard LED")
+        if self.has_buzzer:
+            print("- Buzzer   -> GP15 [BROWN]")
+    
+    def beep(self, frequency=1000, duration=0.1):
+        """Play a beep sound if buzzer is available"""
+        if self.has_buzzer:
+            self.buzzer.duty_u16(5000)
+            self.buzzer.freq(frequency)
+            time.sleep(duration)
+            self.buzzer.duty_u16(0)
+    
+    def success_feedback(self):
+        """Provide success feedback with LEDs and optional buzzer"""
+        # LED pattern: quick flash for both LEDs
+        for _ in range(3):
+            self.led.on()
+            self.onboard_led.on()
+            time.sleep(0.1)
+            self.led.off()
+            self.onboard_led.off()
+            time.sleep(0.1)
+        
+        # Buzzer: success tone
+        if self.has_buzzer:
+            self.beep(1000, 0.1)
+            time.sleep(0.05)
+            self.beep(1500, 0.1)
+    
+    def error_feedback(self):
+        """Provide error feedback with LEDs and optional buzzer"""
+        # LED pattern: long flash for both LEDs
+        self.led.on()
+        self.onboard_led.on()
+        time.sleep(0.5)
+        self.led.off()
+        self.onboard_led.off()
+        
+        # Buzzer: error tone
+        if self.has_buzzer:
+            self.beep(500, 0.3)
+
 # Main program
 def main():
-    print("Initializing SPI...")
+    print("Initializing Pico Expander RFID System...")
+    
+    # Initialize feedback system
+    feedback = PicoExpanderRFID()
+    
+    print("\nInitializing SPI...")
     try:
         # Initialize pins first
         sck = Pin(2, Pin.OUT)
         mosi = Pin(3, Pin.OUT)
         miso = Pin(0, Pin.IN)
         cs = Pin(1, Pin.OUT)
+        rst = Pin(5, Pin.OUT)
         
         # Set initial states
         cs.value(1)  # CS must be high initially
         sck.value(0)  # Clock low initially
+        rst.value(1)  # RST high initially
         
         # Initialize SPI with lower baudrate and mode 0
         spi = SPI(0,
@@ -329,7 +422,7 @@ def main():
         
         # Initialize RC522 RFID reader
         print("Initializing MFRC522...")
-        rfid = MFRC522(spi, cs)
+        rfid = MFRC522(spi, cs, rst)
         
         # Read version register multiple times to ensure communication
         versions = []
@@ -342,30 +435,23 @@ def main():
         if len(set(versions)) != 1 or versions[0] in [0x00, 0xFF]:
             print("\nDiagnostic Information:")
             print("- Inconsistent or invalid version readings")
-            print("Please check:")
-            print("1. Power: Ensure 3.3V is connected and stable")
-            print("2. Connections:")
-            print("   - SDA/CS  -> GP1")
-            print("   - SCK     -> GP2")
-            print("   - MOSI    -> GP3")
-            print("   - MISO    -> GP0")
-            print("3. Voltage levels: All signals should be 3.3V")
-            print("4. Try disconnecting power, waiting 10 seconds, then reconnecting")
+            print("Please check connections according to color coding:")
+            print("  VCC/3.3V -> 3.3V [RED]")
+            print("  GND      -> GND  [BLACK]")
+            print("  RST      -> GP5  [YELLOW]")
+            print("  SDA/CS   -> GP1  [BLUE]")
+            print("  SCK      -> GP2  [GREEN]")
+            print("  MOSI     -> GP3  [ORANGE]")
+            print("  MISO     -> GP0  [WHITE]")
+            feedback.error_feedback()
             return
-            
-        # Setup LED for visual feedback
-        led = Pin("LED", Pin.OUT)
         
-        # Flash LED twice to indicate successful initialization
-        for _ in range(2):
-            led.on()
-            time.sleep(0.1)
-            led.off()
-            time.sleep(0.1)
+        # Success feedback for initialization
+        feedback.success_feedback()
         
-        print("\nReadPI RC522 RFID Reader Test")
+        print("\nPico Expander RC522 RFID Reader Ready!")
         print("Place an RFID card near the reader...")
-        print("(LED will light up when a card is detected)")
+        print("(LED will flash and buzzer will beep when a card is detected)")
         
         last_read_time = 0
         
@@ -379,7 +465,8 @@ def main():
                     # Only process if it's been at least 1 second since last read
                     if current_time - last_read_time >= 1:
                         print("\nCard detected!")
-                        led.on()
+                        feedback.led.on()
+                        feedback.onboard_led.on()
                         
                         # Get the UID of the card
                         (status, uid) = rfid.MFRC522_Anticoll()
@@ -387,26 +474,35 @@ def main():
                         if status == rfid.MI_OK:
                             # Print the UID
                             print("Card UID: ", end="")
+                            uid_str = ""
                             for i in range(0, len(uid)-1):
+                                uid_str += f"{uid[i]:02x}:"
                                 print(f"{uid[i]:02x}", end=":")
+                            uid_str += f"{uid[-1]:02x}"
                             print(f"{uid[-1]:02x}")
+                            
                             last_read_time = current_time
                             
-                            # Keep LED on for a moment
-                            time.sleep(0.5)
+                            # Success feedback
+                            feedback.success_feedback()
                         else:
                             print("Error reading card UID")
+                            feedback.error_feedback()
                         
-                        led.off()
+                        feedback.led.off()
+                        feedback.onboard_led.off()
                 
             except Exception as e:
                 print(f"Error during card reading: {e}")
+                feedback.error_feedback()
                 time.sleep(1)
             
             time.sleep(0.1)
             
     except Exception as e:
         print(f"Initialization error: {e}")
+        if 'feedback' in locals():
+            feedback.error_feedback()
         
 if __name__ == "__main__":
-    main() 
+    main() l
