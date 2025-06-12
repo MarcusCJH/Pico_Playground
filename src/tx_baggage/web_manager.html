@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exhibition Asset Manager</title>
+    <style>
+        /* Base Styles */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        /* Typography */
+        h1 { color: #2c3e50; margin-bottom: 30px; }
+        h3 { color: #495057; margin-top: 30px; margin-bottom: 15px; }
+        
+        /* Layout Components */
+        .section {
+            margin-bottom: 40px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .section h2 { margin-top: 0; color: #34495e; }
+        
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th { background-color: #f1f1f1; }
+        
+        /* Forms and Inputs */
+        .upload-form {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .config-editor {
+            width: 100%;
+            height: 300px;
+            font-family: monospace;
+            padding: 10px;
+            margin-bottom: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        select, .rename-input {
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        
+        .rename-input {
+            display: none;
+            width: 100%;
+        }
+        
+        /* Buttons */
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover { background: #2980b9; }
+        
+        .btn-small {
+            background: #6c757d;
+            padding: 5px 10px;
+            font-size: 12px;
+            margin: 0 2px;
+        }
+        .btn-small:hover { background: #5a6268; }
+        .btn-rename { background: #17a2b8; }
+        .btn-rename:hover { background: #138496; }
+        .btn-delete { background: #dc3545; }
+        .btn-delete:hover { background: #c82333; }
+        
+        /* Status Messages */
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        
+        /* Actions and States */
+        .actions { display: flex; gap: 5px; }
+        .rename-actions { display: none; gap: 5px; margin-top: 5px; }
+        
+        /* RFID Card Management */
+        .status-mapped { color: #28a745; font-weight: bold; }
+        .status-unknown { color: #dc3545; font-weight: bold; }
+        code {
+            background: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Exhibition Asset Manager</h1>
+        
+        <div class="section">
+            <h2>Upload Assets</h2>
+            <div class="upload-form">
+                <input type="file" id="assetFile" accept=".jpg,.jpeg,.png,.gif,.mov,.mp4,.avi">
+                <button onclick="uploadAsset()">Upload</button>
+            </div>
+            <div id="uploadStatus" class="status"></div>
+        </div>
+
+        <div class="section">
+            <h2>Current Assets</h2>
+            <div id="assetsStatus" class="status"></div>
+            <table id="assetTable">
+                <thead>
+                    <tr>
+                        <th>Filename</th>
+                        <th>Type</th>
+                        <th>Size</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>RFID Card Management</h2>
+            <div id="rfidStatus" class="status"></div>
+            <button onclick="loadScannedCards()">Refresh Card List</button>
+            
+            <h3>Unknown Cards (Need Mapping)</h3>
+            <table id="unknownCardsTable">
+                <thead>
+                    <tr>
+                        <th>Card ID</th>
+                        <th>First Seen</th>
+                        <th>Last Seen</th>
+                        <th>Scan Count</th>
+                        <th>Map to Asset</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            
+            <h3>All Scanned Cards</h3>
+            <table id="scannedCardsTable">
+                <thead>
+                    <tr>
+                        <th>Card ID</th>
+                        <th>Status</th>
+                        <th>First Seen</th>
+                        <th>Last Seen</th>
+                        <th>Scan Count</th>
+                        <th>Mapped Asset</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>RFID Card Mappings</h2>
+            <textarea id="configEditor" class="config-editor"></textarea>
+            <button onclick="updateConfig()">Save Configuration</button>
+            <div id="configStatus" class="status"></div>
+        </div>
+    </div>
+
+    <script>
+        // Utility Functions
+        function showStatus(elementId, type, message, duration = 3000) {
+            const statusDiv = document.getElementById(elementId);
+            statusDiv.className = `status ${type}`;
+            statusDiv.textContent = message;
+            
+            if (duration > 0) {
+                setTimeout(() => {
+                    statusDiv.className = 'status';
+                    statusDiv.textContent = '';
+                }, duration);
+            }
+        }
+
+        function showSuccess(elementId, message, duration = 3000) {
+            showStatus(elementId, 'success', message, duration);
+        }
+
+        function showError(elementId, message, duration = 0) {
+            showStatus(elementId, 'error', message, duration);
+        }
+
+        async function apiCall(url, options = {}) {
+            try {
+                const response = await fetch(url, options);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error(`API call failed: ${url}`, error);
+                throw error;
+            }
+        }
+
+        // Load current assets and config on page load
+        window.addEventListener('load', () => {
+            loadAssets();
+            loadConfig();
+            loadScannedCards();
+        });
+
+        async function loadAssets() {
+            try {
+                const data = await apiCall('/assets');
+                const tbody = document.querySelector('#assetTable tbody');
+                tbody.innerHTML = '';
+                
+                data.assets.forEach(asset => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>
+                            <span class="filename-display">${asset.filename}</span>
+                            <input type="text" class="rename-input" value="${asset.filename}">
+                            <div class="rename-actions">
+                                <button class="btn-small" onclick="saveRename(this, '${asset.filename}')">Save</button>
+                                <button class="btn-small" onclick="cancelRename(this)">Cancel</button>
+                            </div>
+                        </td>
+                        <td>${asset.type}</td>
+                        <td>${asset.size_mb} MB</td>
+                        <td>
+                            <div class="actions">
+                                <button class="btn-small btn-rename" onclick="startRename(this)">Rename</button>
+                                <button class="btn-small btn-delete" onclick="deleteFile(this, '${asset.filename}')">Delete</button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } catch (error) {
+                showError('assetsStatus', 'Error loading assets');
+            }
+        }
+
+        async function loadConfig() {
+            try {
+                const data = await apiCall('/config');
+                document.getElementById('configEditor').value = data.config;
+            } catch (error) {
+                showError('configStatus', 'Error loading config');
+            }
+        }
+
+        async function uploadAsset() {
+            const fileInput = document.getElementById('assetFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showError('uploadStatus', 'Please select a file to upload');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                showStatus('uploadStatus', '', 'Uploading...');
+                
+                const data = await apiCall('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                showSuccess('uploadStatus', `Successfully uploaded ${data.filename}`);
+                fileInput.value = '';
+                loadAssets();
+            } catch (error) {
+                showError('uploadStatus', `Error uploading file: ${error.message}`);
+            }
+        }
+
+        async function updateConfig() {
+            const configText = document.getElementById('configEditor').value;
+
+            try {
+                showStatus('configStatus', '', 'Saving configuration...');
+                
+                await apiCall('/update-config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ config: configText })
+                });
+                
+                showSuccess('configStatus', 'Configuration saved successfully');
+            } catch (error) {
+                showError('configStatus', `Error saving configuration: ${error.message}`);
+            }
+        }
+
+        function startRename(button) {
+            const row = button.closest('tr');
+            const filenameDisplay = row.querySelector('.filename-display');
+            const renameInput = row.querySelector('.rename-input');
+            const renameActions = row.querySelector('.rename-actions');
+            
+            filenameDisplay.style.display = 'none';
+            renameInput.style.display = 'block';
+            renameActions.style.display = 'flex';
+            button.style.display = 'none';
+            
+            renameInput.focus();
+            renameInput.select();
+        }
+
+        function cancelRename(button) {
+            const row = button.closest('tr');
+            const filenameDisplay = row.querySelector('.filename-display');
+            const renameInput = row.querySelector('.rename-input');
+            const renameActions = row.querySelector('.rename-actions');
+            const renameButton = row.querySelector('.btn-rename');
+            
+            filenameDisplay.style.display = 'inline';
+            renameInput.style.display = 'none';
+            renameActions.style.display = 'none';
+            renameButton.style.display = 'inline-block';
+            
+            // Reset input value
+            renameInput.value = filenameDisplay.textContent;
+        }
+
+        async function saveRename(button, oldFilename) {
+            const row = button.closest('tr');
+            const renameInput = row.querySelector('.rename-input');
+            const newFilename = renameInput.value.trim();
+            
+            if (!newFilename) {
+                alert('Filename cannot be empty');
+                return;
+            }
+            
+            if (newFilename === oldFilename) {
+                cancelRename(button);
+                return;
+            }
+
+            try {
+                const response = await fetch('/rename-file', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        old_filename: oldFilename,
+                        new_filename: newFilename
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    // Update the display
+                    const filenameDisplay = row.querySelector('.filename-display');
+                    filenameDisplay.textContent = newFilename;
+                    
+                    // Update the rename button onclick
+                    const renameButton = row.querySelector('.btn-rename');
+                    renameButton.setAttribute('onclick', `startRename(this)`);
+                    
+                    // Update the save button onclick
+                    const saveButton = row.querySelector('.rename-actions button:first-child');
+                    saveButton.setAttribute('onclick', `saveRename(this, '${newFilename}')`);
+                    
+                    cancelRename(button);
+                    
+                    // Show success message
+                    const statusDiv = document.getElementById('assetsStatus');
+                    statusDiv.className = 'status success';
+                    statusDiv.textContent = `File renamed from "${oldFilename}" to "${newFilename}"`;
+                    
+                    // Clear message after 3 seconds
+                    setTimeout(() => {
+                        statusDiv.className = 'status';
+                        statusDiv.textContent = '';
+                    }, 3000);
+                    
+                } else {
+                    throw new Error(data.message || 'Rename failed');
+                }
+            } catch (error) {
+                alert(`Error renaming file: ${error.message}`);
+            }
+        }
+
+        async function deleteFile(button, filename) {
+            if (!confirm(`Are you sure you want to delete "${filename}"?\n\nThis action cannot be undone.`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/delete-file', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        filename: filename
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    // Remove the row from the table
+                    const row = button.closest('tr');
+                    row.remove();
+                    
+                    // Show success message
+                    const statusDiv = document.getElementById('assetsStatus');
+                    statusDiv.className = 'status success';
+                    statusDiv.textContent = `File "${filename}" deleted successfully`;
+                    
+                    // Clear message after 3 seconds
+                    setTimeout(() => {
+                        statusDiv.className = 'status';
+                        statusDiv.textContent = '';
+                    }, 3000);
+                    
+                } else {
+                    throw new Error(data.message || 'Delete failed');
+                }
+            } catch (error) {
+                alert(`Error deleting file: ${error.message}`);
+            }
+        }
+
+        // RFID Card Management Functions
+        async function loadScannedCards() {
+            try {
+                const [cardsResponse, assetsResponse, configResponse] = await Promise.all([
+                    fetch('/scanned-cards'),
+                    fetch('/assets'),
+                    fetch('/config')
+                ]);
+                
+                const cardsData = await cardsResponse.json();
+                const assetsData = await assetsResponse.json();
+                const configData = await configResponse.json();
+                
+                // Get currently mapped cards from config
+                const mappedCards = getCurrentlyMappedCards(configData.config);
+                const mappedAssets = Object.values(mappedCards);
+                
+                // Filter to only show truly unknown cards (not in config)
+                const unknownCards = {};
+                Object.entries(cardsData.unknown_cards).forEach(([cardId, cardData]) => {
+                    if (!mappedCards[cardId]) {
+                        unknownCards[cardId] = cardData;
+                    }
+                });
+                
+                // Get available assets (not already mapped)
+                const availableAssets = assetsData.assets.filter(asset => 
+                    !mappedAssets.includes(asset.filename)
+                );
+                
+                // Load unknown cards table (only truly unknown cards)
+                const unknownTbody = document.querySelector('#unknownCardsTable tbody');
+                unknownTbody.innerHTML = '';
+                
+                if (Object.keys(unknownCards).length === 0) {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td colspan="5" style="text-align: center; color: #28a745; font-style: italic;">
+                            🎉 All scanned cards are mapped! Scan a new card to see it here.
+                        </td>
+                    `;
+                    unknownTbody.appendChild(row);
+                } else {
+                    Object.entries(unknownCards).forEach(([cardId, cardData]) => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td><code>${cardId}</code></td>
+                            <td>${formatDateTime(cardData.first_seen)}</td>
+                            <td>${formatDateTime(cardData.last_seen)}</td>
+                            <td>${cardData.scan_count}</td>
+                            <td>
+                                <select id="asset-select-${cardId.replace(/:/g, '-')}" onchange="mapCardToAsset('${cardId}', this.value)">
+                                    <option value="">Select Asset...</option>
+                                    ${availableAssets.map(asset => 
+                                        `<option value="${asset.filename}">${asset.filename} (${asset.type})</option>`
+                                    ).join('')}
+                                </select>
+                                ${availableAssets.length === 0 ? 
+                                    '<br><small style="color: #dc3545;">No unmapped assets available</small>' : ''
+                                }
+                            </td>
+                        `;
+                        unknownTbody.appendChild(row);
+                    });
+                }
+                
+                // Load all scanned cards table
+                const scannedTbody = document.querySelector('#scannedCardsTable tbody');
+                scannedTbody.innerHTML = '';
+                
+                Object.entries(cardsData.scanned_cards).forEach(([cardId, cardData]) => {
+                    const row = document.createElement('tr');
+                    const isMapped = mappedCards[cardId] !== undefined;
+                    const status = isMapped ? 'Mapped' : 'Unknown';
+                    const statusClass = isMapped ? 'status-mapped' : 'status-unknown';
+                    const mappedAsset = mappedCards[cardId] || 'Not mapped';
+                    
+                    row.innerHTML = `
+                        <td><code>${cardId}</code></td>
+                        <td><span class="${statusClass}">${status}</span></td>
+                        <td>${formatDateTime(cardData.first_seen)}</td>
+                        <td>${formatDateTime(cardData.last_seen)}</td>
+                        <td>${cardData.scan_count}</td>
+                        <td>${mappedAsset}</td>
+                    `;
+                    scannedTbody.appendChild(row);
+                });
+                
+                // Update status
+                const statusDiv = document.getElementById('rfidStatus');
+                statusDiv.className = 'status success';
+                const unknownCount = Object.keys(unknownCards).length;
+                const mappedCount = Object.keys(mappedCards).length;
+                statusDiv.textContent = `Found ${cardsData.total_scanned} scanned cards (${mappedCount} mapped, ${unknownCount} need mapping)`;
+                
+            } catch (error) {
+                console.error('Error loading scanned cards:', error);
+                const statusDiv = document.getElementById('rfidStatus');
+                statusDiv.className = 'status error';
+                statusDiv.textContent = 'Error loading scanned cards';
+            }
+        }
+
+        function getCurrentlyMappedCards(configText) {
+            const mappedCards = {};
+            try {
+                // Extract CARD_ASSETS from config
+                const cardAssetsMatch = configText.match(/CARD_ASSETS\s*=\s*{([^}]*)}/s);
+                if (cardAssetsMatch) {
+                    const mappingsText = cardAssetsMatch[1];
+                    // Parse each mapping line
+                    const lines = mappingsText.split('\n');
+                    lines.forEach(line => {
+                        const match = line.match(/["']([^"']+)["']\s*:\s*["']([^"']+)["']/);
+                        if (match) {
+                            mappedCards[match[1]] = match[2];
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('Error parsing mapped cards:', error);
+            }
+            return mappedCards;
+        }
+
+        async function mapCardToAsset(cardId, assetFile) {
+            if (!assetFile) return;
+            
+            try {
+                // Get current config
+                const configResponse = await fetch('/config');
+                const configData = await configResponse.json();
+                
+                // Parse current config to add new mapping
+                let configText = configData.config;
+                
+                // Find the CARD_ASSETS section and add the new mapping
+                const cardAssetsMatch = configText.match(/CARD_ASSETS\s*=\s*{([^}]*)}/s);
+                if (cardAssetsMatch) {
+                    const currentMappings = cardAssetsMatch[1];
+                    const newMapping = `    "${cardId}": "${assetFile}",`;
+                    
+                    // Check if card already exists
+                    if (currentMappings.includes(`"${cardId}"`)) {
+                        // Replace existing mapping
+                        const regex = new RegExp(`\\s*"${cardId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}":\\s*"[^"]*",?`, 'g');
+                        const updatedMappings = currentMappings.replace(regex, '');
+                        configText = configText.replace(cardAssetsMatch[1], updatedMappings + '\n' + newMapping);
+                    } else {
+                        // Add new mapping
+                        configText = configText.replace(cardAssetsMatch[1], currentMappings + '\n' + newMapping);
+                    }
+                } else {
+                    // If CARD_ASSETS doesn't exist, create it
+                    configText += `\n\nCARD_ASSETS = {\n    "${cardId}": "${assetFile}",\n}\n`;
+                }
+                
+                // Save updated config
+                const updateResponse = await fetch('/update-config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ config: configText })
+                });
+                
+                if (updateResponse.ok) {
+                    const statusDiv = document.getElementById('rfidStatus');
+                    statusDiv.className = 'status success';
+                    statusDiv.textContent = `Card ${cardId} mapped to ${assetFile}`;
+                    
+                    // Refresh the card list and config
+                    setTimeout(() => {
+                        loadScannedCards();
+                        loadConfig();
+                    }, 1000);
+                } else {
+                    throw new Error('Failed to update config');
+                }
+                
+            } catch (error) {
+                console.error('Error mapping card to asset:', error);
+                const statusDiv = document.getElementById('rfidStatus');
+                statusDiv.className = 'status error';
+                statusDiv.textContent = `Error mapping card: ${error.message}`;
+            }
+        }
+
+        function formatDateTime(isoString) {
+            const date = new Date(isoString);
+            return date.toLocaleString();
+        }
+    </script>
+</body>
+</html> 

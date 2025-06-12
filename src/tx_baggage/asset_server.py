@@ -25,12 +25,21 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class AssetServer:
+    # Supported file extensions (centralized)
+    VIDEO_EXTENSIONS = ('.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.m4v', '.webm')
+    IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg')
+    ALL_EXTENSIONS = VIDEO_EXTENSIONS + IMAGE_EXTENSIONS
+    
     def __init__(self):
         self.host = "0.0.0.0"  # Listen on all network interfaces
         self.port = 8080
         self.assets_folder = "./assets/"
         self.assets_played = 0
         self.last_asset_info = None
+        
+        # RFID card tracking
+        self.scanned_cards = {}  # card_id -> {first_seen, last_seen, scan_count, mapped}
+        self.unknown_cards = {}  # card_id -> {first_seen, last_seen, scan_count}
         
         os.makedirs(self.assets_folder, exist_ok=True)
         logger.info(f"Asset server initialized. Assets folder: {os.path.abspath(self.assets_folder)}")
@@ -56,35 +65,32 @@ class AssetServer:
             'timestamp': datetime.now().isoformat()
         }
         
+        # Track the card scan as mapped
+        if card_id:
+            self.track_card_scan(card_id, is_mapped=True)
+        
         self.assets_played += 1
         logger.info(f"Asset triggered: {filename} ({asset_type}) (Card: {card_id})")
         return True
     
     def get_asset_type(self, filename):
         """Determine if file is video or image"""
-        video_extensions = ('.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.m4v', '.webm')
-        image_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg')
-        
         filename_lower = filename.lower()
         
-        if filename_lower.endswith(video_extensions):
+        if filename_lower.endswith(self.VIDEO_EXTENSIONS):
             return 'video'
-        elif filename_lower.endswith(image_extensions):
+        elif filename_lower.endswith(self.IMAGE_EXTENSIONS):
             return 'image'
         else:
             return 'unknown'
     
     def list_assets(self):
         """List all asset files in the assets folder"""
-        video_extensions = ('.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.m4v', '.webm')
-        image_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg')
-        all_extensions = video_extensions + image_extensions
-        
         assets = []
         
         try:
             for file in os.listdir(self.assets_folder):
-                if file.lower().endswith(all_extensions):
+                if file.lower().endswith(self.ALL_EXTENSIONS):
                     file_path = self.get_asset_path(file)
                     file_size = os.path.getsize(file_path)
                     asset_type = self.get_asset_type(file)
@@ -98,6 +104,58 @@ class AssetServer:
             logger.error(f"Error listing assets: {e}")
         
         return assets
+    
+    def track_card_scan(self, card_id, is_mapped=True):
+        """Track RFID card scan for management purposes"""
+        current_time = datetime.now().isoformat()
+        
+        if card_id not in self.scanned_cards:
+            self.scanned_cards[card_id] = {
+                'first_seen': current_time,
+                'last_seen': current_time,
+                'scan_count': 1,
+                'mapped': is_mapped
+            }
+        else:
+            self.scanned_cards[card_id]['last_seen'] = current_time
+            self.scanned_cards[card_id]['scan_count'] += 1
+            self.scanned_cards[card_id]['mapped'] = is_mapped
+        
+        # Also track unknown cards separately
+        if not is_mapped:
+            if card_id not in self.unknown_cards:
+                self.unknown_cards[card_id] = {
+                    'first_seen': current_time,
+                    'last_seen': current_time,
+                    'scan_count': 1
+                }
+            else:
+                self.unknown_cards[card_id]['last_seen'] = current_time
+                self.unknown_cards[card_id]['scan_count'] += 1
+
+    def update_card_mapping_status(self):
+        """Update card mapping status based on current config"""
+        try:
+            # Get current card mappings from config
+            from importlib import reload
+            import config
+            reload(config)  # Reload to get latest changes
+            
+            current_mappings = getattr(config, 'CARD_ASSETS', {})
+            
+            # Update mapping status for all tracked cards
+            for card_id in self.scanned_cards:
+                is_mapped = card_id in current_mappings
+                self.scanned_cards[card_id]['mapped'] = is_mapped
+                
+                # Remove from unknown_cards if now mapped
+                if is_mapped and card_id in self.unknown_cards:
+                    del self.unknown_cards[card_id]
+                    
+            logger.info(f"Updated card mapping status. {len(current_mappings)} cards mapped.")
+            
+        except Exception as e:
+            logger.error(f"Error updating card mapping status: {e}")
 
 class RequestHandler(BaseHTTPRequestHandler):
     def __init__(self, *args, asset_server=None, **kwargs):
@@ -137,11 +195,27 @@ class RequestHandler(BaseHTTPRequestHandler):
             logger.error(f"Error sending JSON response: {e}")
             self.send_safe_response(500, 'text/plain', 'Internal server error')
     
+    def handle_client_disconnect(self, operation="request"):
+        """Handle client disconnection gracefully"""
+        logger.debug(f"Client disconnected during {operation}")
+    
+    def handle_server_error(self, error, operation="operation"):
+        """Handle server errors consistently"""
+        logger.error(f"Error during {operation}: {error}")
+        try:
+            self.send_safe_response(500, 'text/plain', 'Internal server error')
+        except:
+            pass
+    
     def do_GET(self):
         """Handle GET requests"""
         try:
             if self.path == '/':
                 self.serve_web_player()
+            elif self.path == '/manage':
+                self.serve_management_interface()
+            elif self.path == '/config':
+                self.get_config()
             elif self.path == '/ping':
                 self.send_json_response({"status": "ok", "timestamp": datetime.now().isoformat()})
             elif self.path == '/status':
@@ -164,17 +238,28 @@ class RequestHandler(BaseHTTPRequestHandler):
                     self.send_json_response(self.asset_server.last_asset_info)
                 else:
                     self.send_json_response({"asset_file": None})
+            elif self.path == '/scanned-cards':
+                # Return all scanned cards (both mapped and unknown)
+                response = {
+                    "scanned_cards": self.asset_server.scanned_cards,
+                    "unknown_cards": self.asset_server.unknown_cards,
+                    "total_scanned": len(self.asset_server.scanned_cards),
+                    "total_unknown": len(self.asset_server.unknown_cards)
+                }
+                self.send_json_response(response)
+            elif self.path == '/unknown-cards':
+                # Return only unknown cards
+                self.send_json_response({
+                    "unknown_cards": self.asset_server.unknown_cards,
+                    "count": len(self.asset_server.unknown_cards)
+                })
             else:
                 self.send_safe_response(404, 'text/plain', 'Not Found')
                 
         except (ConnectionResetError, BrokenPipeError, socket.error):
-            logger.debug("Client disconnected during GET request")
+            self.handle_client_disconnect()
         except Exception as e:
-            logger.error(f"Error handling GET request {self.path}: {e}")
-            try:
-                self.send_safe_response(500, 'text/plain', 'Internal server error')
-            except:
-                pass
+            self.handle_server_error(e)
     
     def serve_web_player(self):
         """Serve the web player HTML file"""
@@ -315,13 +400,226 @@ class RequestHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     logger.error(f"Error handling play request: {e}")
                     self.send_safe_response(500, 'text/plain', 'Internal server error')
+            elif self.path == '/upload':
+                self.handle_file_upload()
+            elif self.path == '/update-config':
+                self.handle_config_update()
+            elif self.path == '/rename-file':
+                self.handle_file_rename()
+            elif self.path == '/delete-file':
+                self.handle_file_delete()
+            elif self.path == '/unknown-card':
+                self.handle_unknown_card()
             else:
                 self.send_safe_response(404, 'text/plain', 'Not Found')
                 
         except (ConnectionResetError, BrokenPipeError, socket.error):
-            logger.debug("Client disconnected during POST request")
+            self.handle_client_disconnect()
         except Exception as e:
             logger.error(f"Error handling POST request: {e}")
+
+    def serve_management_interface(self):
+        """Serve the management interface HTML file"""
+        try:
+            web_manager_path = os.path.join(os.path.dirname(__file__), 'web_manager.html')
+            with open(web_manager_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            self.send_safe_response(200, 'text/html; charset=utf-8', content)
+            
+        except FileNotFoundError:
+            self.send_safe_response(404, 'text/plain', 'Management interface not found')
+        except Exception as e:
+            logger.error(f"Error serving management interface: {e}")
+            self.send_safe_response(500, 'text/plain', str(e))
+
+    def get_config(self):
+        """Get the current config.py contents"""
+        try:
+            config_path = os.path.join(os.path.dirname(__file__), 'config.py')
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_content = f.read()
+            
+            response = {
+                "config": config_content,
+                "card_assets": self.get_card_assets()
+            }
+            self.send_json_response(response)
+            
+        except Exception as e:
+            logger.error(f"Error reading config: {e}")
+            self.send_safe_response(500, 'text/plain', str(e))
+
+    def get_card_assets(self):
+        """Get the current CARD_ASSETS mapping"""
+        try:
+            from config import CARD_ASSETS
+            return CARD_ASSETS
+        except:
+            return {}
+
+    def handle_file_upload(self):
+        """Handle file upload requests"""
+        try:
+            content_type = self.headers['Content-Type']
+            if not content_type.startswith('multipart/form-data'):
+                self.send_safe_response(400, 'text/plain', 'Invalid content type')
+                return
+
+            # Get the boundary
+            boundary = content_type.split('=')[1].encode()
+            remainbytes = int(self.headers['Content-Length'])
+            line = self.rfile.readline()
+            remainbytes -= len(line)
+
+            if not boundary in line:
+                self.send_safe_response(400, 'text/plain', 'Invalid boundary')
+                return
+
+            # Get filename from Content-Disposition header
+            line = self.rfile.readline()
+            remainbytes -= len(line)
+            filename = line.decode().split('filename=')[1].strip().strip('"')
+
+            # Skip headers
+            while remainbytes > 0:
+                line = self.rfile.readline()
+                remainbytes -= len(line)
+                if line == b'\r\n':
+                    break
+
+            # Write file
+            filepath = os.path.join(self.asset_server.assets_folder, filename)
+            with open(filepath, 'wb') as f:
+                while remainbytes > 0:
+                    line = self.rfile.readline()
+                    remainbytes -= len(line)
+                    if boundary in line:
+                        break
+                    f.write(line)
+
+            self.send_json_response({"status": "success", "filename": filename})
+            
+        except Exception as e:
+            logger.error(f"Error handling file upload: {e}")
+            self.send_safe_response(500, 'text/plain', str(e))
+
+    def handle_config_update(self):
+        """Handle config.py update requests"""
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            data = json.loads(post_data.decode('utf-8'))
+            
+            config_path = os.path.join(os.path.dirname(__file__), 'config.py')
+            with open(config_path, 'w', encoding='utf-8') as f:
+                f.write(data['config'])
+            
+            # Update card mapping status after config change
+            self.asset_server.update_card_mapping_status()
+            
+            self.send_json_response({"status": "success"})
+            
+        except Exception as e:
+            logger.error(f"Error updating config: {e}")
+            self.send_safe_response(500, 'text/plain', str(e))
+
+    def handle_file_rename(self):
+        """Handle file rename requests"""
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            data = json.loads(post_data.decode('utf-8'))
+            
+            old_filename = data.get('old_filename')
+            new_filename = data.get('new_filename')
+            
+            if not old_filename or not new_filename:
+                self.send_safe_response(400, 'text/plain', 'Missing filename parameters')
+                return
+            
+            old_path = os.path.join(self.asset_server.assets_folder, old_filename)
+            new_path = os.path.join(self.asset_server.assets_folder, new_filename)
+            
+            if not os.path.exists(old_path):
+                self.send_safe_response(404, 'text/plain', 'File not found')
+                return
+            
+            if os.path.exists(new_path):
+                self.send_safe_response(409, 'text/plain', 'File with new name already exists')
+                return
+            
+            # Rename the file
+            os.rename(old_path, new_path)
+            
+            self.send_json_response({
+                "status": "success", 
+                "old_filename": old_filename,
+                "new_filename": new_filename
+            })
+            
+        except Exception as e:
+            logger.error(f"Error renaming file: {e}")
+            self.send_safe_response(500, 'text/plain', str(e))
+
+    def handle_file_delete(self):
+        """Handle file deletion requests"""
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            data = json.loads(post_data.decode('utf-8'))
+            
+            filename = data.get('filename')
+            
+            if not filename:
+                self.send_safe_response(400, 'text/plain', 'Missing filename parameter')
+                return
+            
+            file_path = os.path.join(self.asset_server.assets_folder, filename)
+            
+            if not os.path.exists(file_path):
+                self.send_safe_response(404, 'text/plain', 'File not found')
+                return
+            
+            # Delete the file
+            os.remove(file_path)
+            
+            self.send_json_response({
+                "status": "success", 
+                "filename": filename,
+                "message": f"File '{filename}' deleted successfully"
+            })
+            
+        except Exception as e:
+            logger.error(f"Error deleting file: {e}")
+            self.send_safe_response(500, 'text/plain', str(e))
+
+    def handle_unknown_card(self):
+        """Handle unknown card scan requests"""
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            data = json.loads(post_data.decode('utf-8'))
+            
+            card_id = data.get('card_id')
+            
+            if not card_id:
+                self.send_safe_response(400, 'text/plain', 'Missing card_id parameter')
+                return
+            
+            logger.info(f"Unknown card {card_id} scanned")
+            
+            self.asset_server.track_card_scan(card_id, is_mapped=False)
+            
+            self.send_json_response({
+                "status": "success",
+                "card_id": card_id,
+                "message": f"Card {card_id} marked as unknown"
+            })
+            
+        except Exception as e:
+            logger.error(f"Error handling unknown card scan: {e}")
+            self.send_safe_response(500, 'text/plain', str(e))
 
 def create_handler(asset_server):
     """Create request handler with asset server instance"""
@@ -359,11 +657,11 @@ def main():
     print("Exhibition Asset Player Server")
     print("=" * 40)
     print("Simple HTTP server that plays videos and images")
-    print("when triggered by RFID card scans from ReadPI")
+    print("when triggered by RFID card scans from Exhibition device")
     print()
     print("Setup:")
     print("1. Put your video/image files in the 'assets' folder")
-    print("2. Update ReadPI client with this server's IP")
+    print("2. Update Exhibition client with this server's IP")
     print("3. Map RFID cards to asset filenames in client")
     print("=" * 40)
     

@@ -214,7 +214,7 @@ pids
 
 # Media and Asset Files
 src/tx_baggage/assets/*
-!src/tx_baggage/assets/README.txt
+!src/tx_baggage/assets/README.md
 *.mov
 *.mp4
 *.avi

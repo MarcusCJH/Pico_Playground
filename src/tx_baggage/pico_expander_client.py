@@ -246,12 +246,18 @@ class ExhibitionClientPico:
         # Hardware Setup
         self.setup_hardware()
         
-        # State
+        # State management
         self.wifi_connected = False
         self.last_card = None
         self.last_scan_time = 0
         self.scan_cooldown = 3.0
         self.scan_count = 0
+        
+        # Card presence tracking to prevent repeated scans
+        self.card_present = False
+        self.no_card_count = 0
+        self.current_card_processed = False
+        self.card_removal_threshold = 20  # Failed reads before considering card removed
     
     def setup_hardware(self):
         """Initialize hardware components"""
@@ -401,22 +407,57 @@ class ExhibitionClientPico:
             print(f"Failed to trigger asset: {e}")
             return False
     
+    def trigger_unknown_card(self, card_id):
+        """Send unknown card information to server for tracking"""
+        try:
+            url = f"http://{self.SERVER_IP}:{self.SERVER_PORT}/unknown-card"
+            data = {
+                "card_id": card_id,
+                "timestamp": time.time()
+            }
+            
+            response = urequests.post(
+                url, 
+                data=json.dumps(data),
+                headers={'Content-Type': 'application/json'},
+                timeout=10
+            )
+            
+            success = response.status_code == 200
+            if success:
+                print(f"Unknown card {card_id} logged to server")
+            response.close()
+            return success
+            
+        except Exception as e:
+            print(f"Failed to log unknown card: {e}")
+            return False
+    
     def format_uid(self, uid):
         """Format the UID as a hex string with colons between bytes"""
         return ':'.join(f'{x:02x}' for x in uid)
     
     def process_card(self, uid):
-        """Process scanned RFID card"""
+        """Process scanned RFID card with duplicate prevention"""
         card_id = self.format_uid(uid)
         current_time = time.time()
         
-        # Check cooldown
-        if card_id == self.last_card and (current_time - self.last_scan_time) < self.scan_cooldown:
+        # Prevent processing the same card multiple times while it sits on scanner
+        if card_id == self.last_card and self.card_present and self.current_card_processed:
             return
         
+        # Enforce cooldown period for the same card
+        if card_id == self.last_card and (current_time - self.last_scan_time) < self.scan_cooldown:
+            self.card_present = True  # Update presence but don't process
+            return
+        
+        # Process the card
         self.last_card = card_id
         self.last_scan_time = current_time
         self.scan_count += 1
+        self.card_present = True
+        self.current_card_processed = True
+        self.no_card_count = 0
         
         print(f"\nCard scanned: {card_id} (Scan #{self.scan_count})")
         
@@ -438,6 +479,11 @@ class ExhibitionClientPico:
             print(f"Unknown card: {card_id}")
             print("Card not found in mappings!")
             self.error_feedback()
+            
+            if self.trigger_unknown_card(card_id):
+                print("Unknown card logged to server")
+            else:
+                print("Failed to log unknown card")
         
         # Turn off LEDs
         self.led.off()
@@ -478,6 +524,21 @@ class ExhibitionClientPico:
                     (status, uid) = self.rfid.MFRC522_Anticoll()
                     if status == self.rfid.MI_OK:
                         self.process_card(uid)
+                        self.no_card_count = 0  # Reset no-card counter
+                    else:
+                        # Card detection failed
+                        self.no_card_count += 1
+                else:
+                    # No card detected
+                    self.no_card_count += 1
+                
+                # If we haven't detected a card for several consecutive reads,
+                # consider the card removed
+                if self.no_card_count >= self.card_removal_threshold and self.card_present:
+                    self.card_present = False
+                    self.current_card_processed = False  # Reset processed flag when card is removed
+                    # Don't reset last_card - keep it for cooldown purposes
+                    print("Card removed from scanner")
                 
                 time.sleep(0.1)
                 

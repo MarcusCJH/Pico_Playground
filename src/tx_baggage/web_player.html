@@ -415,6 +415,9 @@
         <div id="advancedControls" style="display: none;">
             <div id="rfidSimulator">
                 <h3>🏷️ RFID Card Simulation</h3>
+                <p style="font-size: 11px; color: #ccc; margin-bottom: 10px;">
+                    💡 Unknown cards are now tracked! Check the Management Interface to map them.
+                </p>
                 <div class="rfid-card" onclick="simulateRfid('3800132D9B9D')">
                     Card 1 (Video)
                     <small>3800132D9B9D</small>
@@ -426,6 +429,10 @@
                 <div class="rfid-card" onclick="simulateRfid('38001370E9B3')">
                     Card 3 (Video)
                     <small>38001370E9B3</small>
+                </div>
+                <div class="rfid-card" onclick="simulateRfid('UNKNOWN-CARD-123')">
+                    Unknown Card (Test)
+                    <small>UNKNOWN-CARD-123</small>
                 </div>
             </div>
             <button onclick="testAsset('video')">🎬 Test Video</button>
@@ -530,17 +537,22 @@
                         Card 3 (Video)
                         <small>38001370E9B3</small>
                     </div>
+                    <div class="rfid-card" onclick="simulateRfid('UNKNOWN-CARD-123')">
+                        Unknown Card (Test)
+                        <small>UNKNOWN-CARD-123</small>
+                    </div>
                 `;
             }
 
             updateNavigationButtons() {
+                // Linear navigation with clear boundaries
                 const canGoPrev = this.currentHistoryIndex > 0;
                 const canGoNext = this.currentHistoryIndex < this.assetHistory.length - 1;
 
                 this.prevButton.disabled = !canGoPrev;
                 this.nextButton.disabled = !canGoNext;
 
-                console.log('Navigation state updated:', {
+                console.log('Navigation state updated (linear):', {
                     currentIndex: this.currentHistoryIndex,
                     historyLength: this.assetHistory.length,
                     canGoPrev,
@@ -550,7 +562,7 @@
             }
 
             async navigateHistory(direction) {
-                console.log('Starting navigation:', {
+                console.log('Starting linear navigation:', {
                     direction,
                     currentIndex: this.currentHistoryIndex,
                     historyLength: this.assetHistory.length,
@@ -564,10 +576,12 @@
                 } else if (direction === 'forward' && this.currentHistoryIndex < this.assetHistory.length - 1) {
                     targetIndex++;
                 } else {
-                    console.log('Cannot navigate:', {
+                    console.log('Cannot navigate: at boundary', {
                         direction,
                         currentIndex: this.currentHistoryIndex,
-                        historyLength: this.assetHistory.length
+                        historyLength: this.assetHistory.length,
+                        atStart: this.currentHistoryIndex === 0,
+                        atEnd: this.currentHistoryIndex === this.assetHistory.length - 1
                     });
                     return;
                 }
@@ -600,7 +614,7 @@
                     this.updateNavigationButtons();
                 } catch (error) {
                     // Revert the index if the request fails
-                    this.currentHistoryIndex = targetIndex - (direction === 'forward' ? 1 : -1);
+                    this.currentHistoryIndex = targetIndex + (direction === 'forward' ? -1 : 1);
                     console.error('Navigation trigger error:', error);
                     this.showNotification('Failed to trigger navigation', 'error');
                     this.updateNavigationButtons();
@@ -811,8 +825,8 @@
                 this.startImageTimer();
             }
 
-            startImageTimer() {
-                let timeLeft = this.imageDisplayDuration / 1000;
+            startTimer(duration, onComplete) {
+                let timeLeft = duration / 1000;
                 this.imageTimerEl.style.display = 'block';
                 
                 const updateTimer = () => {
@@ -822,31 +836,24 @@
                     timeLeft -= 0.1;
                     
                     if (timeLeft <= 0) {
-                        this.showWelcomeScreen();
+                        onComplete();
                     }
                 };
                 
                 updateTimer();
-                this.imageTimer = setInterval(updateTimer, 100);
+                return setInterval(updateTimer, 100);
+            }
+
+            startImageTimer() {
+                this.imageTimer = this.startTimer(this.imageDisplayDuration, () => {
+                    this.showWelcomeScreen();
+                });
             }
 
             startVideoWaitTimer() {
-                let timeLeft = this.videoWaitDuration / 1000;
-                this.imageTimerEl.style.display = 'block';
-                
-                const updateTimer = () => {
-                    const minutes = Math.floor(timeLeft / 60);
-                    const seconds = Math.ceil(timeLeft % 60);
-                    this.timerText.textContent = `⏱️ ${minutes}:${seconds.toString().padStart(2, '0')}`;
-                    timeLeft -= 0.1;
-                    
-                    if (timeLeft <= 0) {
-                        this.showWelcomeScreen();
-                    }
-                };
-                
-                updateTimer();
-                this.videoTimer = setInterval(updateTimer, 100);
+                this.videoTimer = this.startTimer(this.videoWaitDuration, () => {
+                    this.showWelcomeScreen();
+                });
             }
 
             clearTimers() {
@@ -903,12 +910,19 @@
                 const navControls = document.getElementById('navigationControls');
                 if (enabled && this.assetHistory.length > 1) {
                     navControls.classList.add('visible');
-                    console.log('Navigation enabled:', {
+                    console.log('Linear navigation enabled:', {
                         historyLength: this.assetHistory.length,
-                        currentIndex: this.currentHistoryIndex
+                        currentIndex: this.currentHistoryIndex,
+                        currentAsset: this.assetHistory[this.currentHistoryIndex]?.asset_file || 'None',
+                        canGoPrev: this.currentHistoryIndex > 0,
+                        canGoNext: this.currentHistoryIndex < this.assetHistory.length - 1
                     });
                 } else {
                     navControls.classList.remove('visible');
+                    console.log('Navigation disabled:', {
+                        reason: this.assetHistory.length <= 1 ? 'Insufficient history items' : 'Manually disabled',
+                        historyLength: this.assetHistory.length
+                    });
                 }
                 this.updateNavigationButtons();
             }
@@ -1006,39 +1020,44 @@
             console.log('Fullscreen changed:', document.fullscreenElement ? 'Entered' : 'Exited');
         });
 
+        // RFID Card Configuration
+        const RFID_CARD_MAPPING = {
+            '3800132D9B9D': '1.mov',
+            '38001370E9B2': '2.jpg', 
+            '38001370E9B3': '3.mov'
+        };
+
         // RFID simulation function
         async function simulateRfid(cardId) {
             try {
-                // Determine which asset file to play based on the card ID
-                let assetFile;
-                switch (cardId) {
-                    case '3800132D9B9D':
-                        assetFile = '1.mov';
-                        break;
-                    case '38001370E9B2':
-                        assetFile = '2.jpg';
-                        break;
-                    case '38001370E9B3':
-                        assetFile = '3.mov';
-                        break;
-                    default:
-                        throw new Error('Unknown card ID');
-                }
+                const assetFile = RFID_CARD_MAPPING[cardId];
+                const isKnownCard = !!assetFile;
 
-                const response = await fetch(`http://${window.player.serverHost}:${window.player.serverPort}/play`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        card_id: cardId,
-                        asset_file: assetFile,
-                        timestamp: new Date().toISOString()
-                    })
-                });
+                if (isKnownCard) {
+                    // Send known card to play endpoint
+                    await fetch(`http://${window.player.serverHost}:${window.player.serverPort}/play`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            card_id: cardId,
+                            asset_file: assetFile,
+                            timestamp: new Date().toISOString()
+                        })
+                    });
+                } else {
+                    // Send unknown card to unknown-card endpoint
+                    const response = await fetch(`http://${window.player.serverHost}:${window.player.serverPort}/unknown-card`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            card_id: cardId,
+                            timestamp: new Date().toISOString()
+                        })
+                    });
 
-                if (!response.ok) {
-                    throw new Error('Failed to trigger asset');
+                    if (response.ok && window.player) {
+                        window.player.showNotification(`🏷️ Unknown card ${cardId} tracked! Check Management Interface to map it.`, 'info');
+                    }
                 }
 
                 // Force an immediate poll to update the UI
