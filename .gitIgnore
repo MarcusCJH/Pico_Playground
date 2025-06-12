@@ -207,7 +207,7 @@ pids
 *.swo
 *~
 
-# Hardware specific files (for ReadPI project)
+# Hardware specific files (for PicoRFID project)
 *.bin
 *.hex
 *.uf2

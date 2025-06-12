@@ -1,6 +1,7 @@
 """
-ReadPI Exhibition Client
-Simple RFID scanner that triggers videos and images on a remote server
+Exhibition Client
+RFID Exhibition System - Client Side
+Reads RFID cards and triggers asset playback on server
 """
 
 import network
@@ -12,7 +13,7 @@ import st7789
 import vga1_bold_16x32 as font
 import config
 
-class ReadPIClient:
+class ExhibitionClient:
     def __init__(self):
         # Configuration from config.py
         self.WIFI_SSID = config.WIFI_SSID
@@ -225,7 +226,7 @@ class ReadPIClient:
     
     def run(self):
         """Main loop"""
-        print("Starting ReadPI Exhibition Client...")
+        print("Starting Exhibition Client...")
         
         if not self.connect_wifi():
             print("WiFi connection failed!")
@@ -259,7 +260,7 @@ class ReadPIClient:
             self.display.text(font, "STOPPED", 60, 100, st7789.RED)
 
 def main():
-    client = ReadPIClient()
+    client = ExhibitionClient()
     client.run()
 
 if __name__ == "__main__":

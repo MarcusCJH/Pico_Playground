@@ -18,7 +18,7 @@ uart = UART(1, baudrate=9600, tx=Pin(4), rx=Pin(5))
 # Setup onboard LED for indication
 led = Pin("LED", Pin.OUT)
 
-print("ReadPI RFID Test Starting...")
+print("PicoRFID RFID Test Starting...")
 print("Place an RFID card near the reader...")
 print("Waiting for RFID cards...")
 

@@ -1,4 +1,4 @@
-# Network Connectivity Test for ReadPI
+# Network Connectivity Test for PicoRFID
 import network
 import urequests
 import socket

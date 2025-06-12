@@ -1,5 +1,6 @@
-""
-RC522 RFID Reader Implementation for ReadPI Board
+"""
+RC522 RFID Reader Implementation for PicoRFID Board
+Complete RC522 driver for Raspberry Pi Pico W
 Connections:
 - SDA  -> GP1 (SPI0 CSn)
 - SCK  -> GP2 (SPI0 SCK)
@@ -363,7 +364,7 @@ def main():
             led.off()
             time.sleep(0.1)
         
-        print("\nReadPI RC522 RFID Reader Test")
+        print("\nPicoRFID RC522 RFID Reader Test")
         print("Place an RFID card near the reader...")
         print("(LED will light up when a card is detected)")
         

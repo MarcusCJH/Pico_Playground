@@ -1,8 +1,8 @@
 """
-ReadPi Complete Demo - All Capabilities in One File
+PicoRFID Complete Demo - All Capabilities in One File
 ====================================================
 
-This is a simple demonstration that shows everything the ReadPi can do:
+This is a simple demonstration that shows everything the PicoRFID can do:
 - LED control and patterns
 - Buzzer sounds and melodies  
 - Display text, colors, and graphics
@@ -11,9 +11,9 @@ This is a simple demonstration that shows everything the ReadPi can do:
 - WiFi connectivity
 - System information
 
-Just copy this file as main.py to your ReadPi and it will run automatically!
+Just copy this file as main.py to your PicoRFID and it will run automatically!
 
-Hardware: ReadPi RFID Reader (125KHz) with Raspberry Pi Pico W
+Hardware: PicoRFID RFID Reader (125KHz) with Raspberry Pi Pico W
 """
 
 from machine import Pin, SPI, UART, PWM, unique_id
@@ -105,7 +105,7 @@ def demo_welcome():
     display.fill(st7789.BLACK)
     
     # Title
-    display.text(font, "ReadPi Demo", 50, 80, st7789.CYAN)
+    display.text(font, "PicoRFID Demo", 50, 80, st7789.CYAN)
     display.text(font, "Loading...", 70, 120, st7789.WHITE)
     
     startup_melody()
@@ -335,7 +335,7 @@ def demo_system_info():
     
     show_text(f"SYSTEM INFO\n\nMemory: {free_mem}KB free\nUptime: {uptime}s\nDevice: {device_id}\nCards read: {cards_read}", st7789.CYAN)
     
-    print(f"\n=== ReadPi System Information ===")
+    print(f"\n=== PicoRFID System Information ===")
     print(f"Free Memory: {free_mem}KB")
     print(f"Used Memory: {used_mem}KB") 
     print(f"Uptime: {uptime} seconds")
@@ -366,7 +366,7 @@ def demo_complete():
     show_text("Ready for your\nproject!\n\nCheck console for\nmore details", st7789.CYAN)
     
     print(f"\n{'='*40}")
-    print("🎉 ReadPi Demo Complete!")
+    print("🎉 PicoRFID Demo Complete!")
     print(f"{'='*40}")
     print("\nHardware components tested:")
     for comp in components:
@@ -379,17 +379,17 @@ def demo_complete():
     print("• Use the Thonny console to experiment")
     print("• Try the individual examples in the official folder")
     print("• Build your own RFID applications")
-    print("\nHave fun building with ReadPi! 🚀")
+    print("\nHave fun building with PicoRFID! 🚀")
     
     time.sleep(5)
 
 # ===== MAIN DEMO LOOP =====
 def run_demo():
-    """Run the complete ReadPi demonstration"""
+    """Run the complete PicoRFID demonstration"""
     print("\n" + "="*50)
-    print("🚀 Starting ReadPi Complete Demo")
+    print("🚀 Starting PicoRFID Complete Demo")
     print("="*50)
-    print("\nThis demo will show you everything the ReadPi can do:")
+    print("\nThis demo will show you everything the PicoRFID can do:")
     print("• Display graphics and text")
     print("• Play sounds and melodies") 
     print("• Control LED patterns")
