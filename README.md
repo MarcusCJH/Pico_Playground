@@ -22,7 +22,7 @@ sudo apt install -y git python3 python3-pip
 3. Download the setup script to your Desktop:
 ```bash
 cd ~/Desktop
-wget https://raw.githubusercontent.com/MarcusCJH/Pico_Playground/main/setup_and_run.sh
+wget https://raw.githubusercontent.com/MarcusCJH/Pico_Playground/master/setup_and_run.sh
 chmod +x setup_and_run.sh
 ```
 
