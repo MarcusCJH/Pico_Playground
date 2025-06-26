@@ -333,17 +333,19 @@ class ExhibitionClientPico:
         self.beep(500, 0.3)
     
     def connect_wifi(self):
-        """Connect to WiFi"""
+        """Fast WiFi connection with fallback for UPS/battery power"""
         print("Connecting to WiFi...")
         
         wlan = network.WLAN(network.STA_IF)
         wlan.active(True)
         
+        # FAST PATH: Try quick connection first (works when USB powered or good conditions)
+        print("Trying fast connection...")
         if not wlan.isconnected():
             wlan.connect(self.WIFI_SSID, self.WIFI_PASSWORD)
             
-            # Wait for connection
-            timeout = 15
+            # Quick timeout - only 8 seconds
+            timeout = 16  # 8 seconds total
             while not wlan.isconnected() and timeout > 0:
                 self.onboard_led.toggle()
                 time.sleep(0.5)
@@ -352,13 +354,58 @@ class ExhibitionClientPico:
         if wlan.isconnected():
             self.wifi_connected = True
             ip = wlan.ifconfig()[0]
-            print(f"WiFi Connected! IP: {ip}")
+            print(f"WiFi Connected Fast! IP: {ip}")
             self.beep(1000, 0.1)
             return True
-        else:
-            print("WiFi connection failed!")
-            self.error_feedback()
-            return False
+        
+        # ROBUST PATH: If fast connection failed, use robust method
+        print("Fast connection failed, trying robust method...")
+        print("Power stabilization delay...")
+        time.sleep(1)  # Reduced from 2 seconds
+        
+        # Reset WiFi for clean state
+        wlan.active(False)
+        time.sleep(0.5)  # Reduced delay
+        wlan.active(True)
+        time.sleep(0.5)  # Reduced delay
+        
+        # Try 2 attempts with shorter timeouts
+        max_retries = 2  # Reduced from 3
+        for attempt in range(max_retries):
+            print(f"Robust attempt {attempt + 1}/{max_retries}")
+            
+            wlan.connect(self.WIFI_SSID, self.WIFI_PASSWORD)
+            
+            # Shorter timeout for robust attempts
+            timeout = 24  # 12 seconds total
+            while not wlan.isconnected() and timeout > 0:
+                self.onboard_led.toggle()
+                time.sleep(0.5)
+                timeout -= 1
+                
+                # Show progress less frequently
+                if timeout % 6 == 0:
+                    print(f"Waiting... {timeout//2}s left")
+            
+            if wlan.isconnected():
+                self.wifi_connected = True
+                ip = wlan.ifconfig()[0]
+                print(f"WiFi Connected! IP: {ip}")
+                self.beep(1000, 0.1)
+                return True
+            else:
+                print(f"Robust attempt {attempt + 1} failed")
+                if attempt < max_retries - 1:
+                    print("Quick retry...")
+                    time.sleep(1)  # Reduced from 3 seconds
+                    wlan.active(False)
+                    time.sleep(0.5)
+                    wlan.active(True)
+                    time.sleep(0.5)
+        
+        print("All WiFi connection attempts failed!")
+        self.error_feedback()
+        return False
     
     def test_server(self):
         """Test connection to asset server"""
