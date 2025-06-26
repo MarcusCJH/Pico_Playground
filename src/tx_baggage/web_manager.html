@@ -170,7 +170,7 @@
                         <th>First Seen</th>
                         <th>Last Seen</th>
                         <th>Scan Count</th>
-                        <th>Map to Asset</th>
+                        <th>Add First Asset</th>
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -185,7 +185,8 @@
                         <th>First Seen</th>
                         <th>Last Seen</th>
                         <th>Scan Count</th>
-                        <th>Mapped Asset</th>
+                        <th>Mapped Assets</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -482,7 +483,7 @@
                 
                 // Get currently mapped cards from config
                 const mappedCards = getCurrentlyMappedCards(configData.config);
-                const mappedAssets = Object.values(mappedCards);
+                const mappedAssets = Object.values(mappedCards).flat(); // Flatten arrays of assets
                 
                 // Filter to only show truly unknown cards (not in config)
                 const unknownCards = {};
@@ -542,7 +543,34 @@
                     const isMapped = mappedCards[cardId] !== undefined;
                     const status = isMapped ? 'Mapped' : 'Unknown';
                     const statusClass = isMapped ? 'status-mapped' : 'status-unknown';
-                    const mappedAsset = mappedCards[cardId] || 'Not mapped';
+                    
+                    // Display multiple assets
+                    let mappedAsset = 'Not mapped';
+                    let actionButtons = '';
+                    
+                    if (isMapped) {
+                        const assets = mappedCards[cardId];
+                        if (assets.length === 1) {
+                            mappedAsset = assets[0];
+                        } else {
+                            mappedAsset = `${assets.length} assets: ${assets.join(', ')}`;
+                        }
+                        
+                        // Add management buttons for mapped cards
+                        actionButtons = `
+                            <button class="btn-small" onclick="manageCardAssets('${cardId}')">Manage Assets</button>
+                        `;
+                    } else {
+                        // Show dropdown for unmapped cards
+                        actionButtons = `
+                            <select onchange="mapCardToAsset('${cardId}', this.value)">
+                                <option value="">Select Asset...</option>
+                                ${availableAssets.map(asset => 
+                                    `<option value="${asset.filename}">${asset.filename}</option>`
+                                ).join('')}
+                            </select>
+                        `;
+                    }
                     
                     row.innerHTML = `
                         <td><code>${cardId}</code></td>
@@ -550,7 +578,8 @@
                         <td>${formatDateTime(cardData.first_seen)}</td>
                         <td>${formatDateTime(cardData.last_seen)}</td>
                         <td>${cardData.scan_count}</td>
-                        <td>${mappedAsset}</td>
+                        <td style="max-width: 200px; word-wrap: break-word;">${mappedAsset}</td>
+                        <td>${actionButtons}</td>
                     `;
                     scannedTbody.appendChild(row);
                 });
@@ -577,12 +606,27 @@
                 const cardAssetsMatch = configText.match(/CARD_ASSETS\s*=\s*{([^}]*)}/s);
                 if (cardAssetsMatch) {
                     const mappingsText = cardAssetsMatch[1];
-                    // Parse each mapping line
+                    
+                    // Handle both old and new formats
                     const lines = mappingsText.split('\n');
                     lines.forEach(line => {
-                        const match = line.match(/["']([^"']+)["']\s*:\s*["']([^"']+)["']/);
-                        if (match) {
-                            mappedCards[match[1]] = match[2];
+                        // New format: "card_id": ["asset1.file", "asset2.file"]
+                        const arrayMatch = line.match(/["']([^"']+)["']\s*:\s*\[([^\]]*)\]/);
+                        if (arrayMatch) {
+                            const cardId = arrayMatch[1];
+                            const assetsText = arrayMatch[2];
+                            // Extract asset filenames from array
+                            const assetMatches = assetsText.match(/["']([^"']+)["']/g);
+                            if (assetMatches) {
+                                const assets = assetMatches.map(match => match.replace(/["']/g, ''));
+                                mappedCards[cardId] = assets;
+                            }
+                        } else {
+                            // Old format: "card_id": "asset_file"
+                            const singleMatch = line.match(/["']([^"']+)["']\s*:\s*["']([^"']+)["']/);
+                            if (singleMatch) {
+                                mappedCards[singleMatch[1]] = [singleMatch[2]]; // Convert to array
+                            }
                         }
                     });
                 }
@@ -607,21 +651,25 @@
                 const cardAssetsMatch = configText.match(/CARD_ASSETS\s*=\s*{([^}]*)}/s);
                 if (cardAssetsMatch) {
                     const currentMappings = cardAssetsMatch[1];
-                    const newMapping = `    "${cardId}": "${assetFile}",`;
+                    const newMapping = `    "${cardId}": ["${assetFile}"],`; // Use array format
                     
                     // Check if card already exists
                     if (currentMappings.includes(`"${cardId}"`)) {
-                        // Replace existing mapping
-                        const regex = new RegExp(`\\s*"${cardId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}":\\s*"[^"]*",?`, 'g');
-                        const updatedMappings = currentMappings.replace(regex, '');
+                        // Replace existing mapping (handle both old and new formats)
+                        const escapedCardId = cardId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const oldFormatRegex = new RegExp(`\\s*"${escapedCardId}":\\s*"[^"]*",?`, 'g');
+                        const newFormatRegex = new RegExp(`\\s*"${escapedCardId}":\\s*\\[[^\\]]*\\],?`, 'g');
+                        
+                        let updatedMappings = currentMappings.replace(oldFormatRegex, '');
+                        updatedMappings = updatedMappings.replace(newFormatRegex, '');
                         configText = configText.replace(cardAssetsMatch[1], updatedMappings + '\n' + newMapping);
                     } else {
                         // Add new mapping
                         configText = configText.replace(cardAssetsMatch[1], currentMappings + '\n' + newMapping);
                     }
                 } else {
-                    // If CARD_ASSETS doesn't exist, create it
-                    configText += `\n\nCARD_ASSETS = {\n    "${cardId}": "${assetFile}",\n}\n`;
+                    // If CARD_ASSETS doesn't exist, create it with new format
+                    configText += `\n\nCARD_ASSETS = {\n    "${cardId}": ["${assetFile}"],\n}\n`;
                 }
                 
                 // Save updated config
@@ -658,6 +706,224 @@
         function formatDateTime(isoString) {
             const date = new Date(isoString);
             return date.toLocaleString();
+        }
+
+        async function manageCardAssets(cardId) {
+            try {
+                // Get current config and available assets
+                const [configResponse, assetsResponse] = await Promise.all([
+                    fetch('/config'),
+                    fetch('/assets')
+                ]);
+                
+                const configData = await configResponse.json();
+                const assetsData = await assetsResponse.json();
+                const mappedCards = getCurrentlyMappedCards(configData.config);
+                const currentAssets = mappedCards[cardId] || [];
+                const allAssets = assetsData.assets;
+                
+                // Create modal for asset management
+                const modal = document.createElement('div');
+                modal.style.cssText = `
+                    position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+                    background: rgba(0,0,0,0.5); z-index: 1000; display: flex; 
+                    align-items: center; justify-content: center;
+                `;
+                
+                const modalContent = document.createElement('div');
+                modalContent.style.cssText = `
+                    background: white; padding: 20px; border-radius: 8px; 
+                    max-width: 600px; width: 90%; max-height: 80%; overflow-y: auto;
+                `;
+                
+                modalContent.innerHTML = `
+                    <h3>Manage Assets for Card: <code>${cardId}</code></h3>
+                    <div id="currentAssets">
+                        <h4>Current Assets (${currentAssets.length}):</h4>
+                        <div id="assetList"></div>
+                    </div>
+                    <div id="addAsset">
+                        <h4>Add Asset:</h4>
+                        <select id="assetSelect">
+                            <option value="">Select asset to add...</option>
+                        </select>
+                        <button onclick="addAssetToCard('${cardId}')">Add Asset</button>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <button onclick="closeModal()">Close</button>
+                    </div>
+                `;
+                
+                modal.appendChild(modalContent);
+                document.body.appendChild(modal);
+                
+                // Populate current assets
+                const assetListDiv = document.getElementById('assetList');
+                if (currentAssets.length === 0) {
+                    assetListDiv.innerHTML = '<p><em>No assets mapped to this card</em></p>';
+                } else {
+                    assetListDiv.innerHTML = currentAssets.map((asset, index) => `
+                        <div style="display: flex; align-items: center; margin: 5px 0; padding: 5px; border: 1px solid #ddd; border-radius: 3px;">
+                            <span style="flex: 1;">${index + 1}. ${asset}</span>
+                            <button class="btn-small btn-delete" onclick="removeAssetFromCard('${cardId}', ${index})">Remove</button>
+                        </div>
+                    `).join('');
+                }
+                
+                // Populate available assets (exclude already mapped ones)
+                const assetSelect = document.getElementById('assetSelect');
+                const availableAssets = allAssets.filter(asset => !currentAssets.includes(asset.filename));
+                
+                availableAssets.forEach(asset => {
+                    const option = document.createElement('option');
+                    option.value = asset.filename;
+                    option.textContent = `${asset.filename} (${asset.type})`;
+                    assetSelect.appendChild(option);
+                });
+                
+                // Store current card ID for use in other functions
+                window.currentManagingCardId = cardId;
+                
+                // Close modal on background click
+                modal.onclick = (e) => {
+                    if (e.target === modal) closeModal();
+                };
+                
+            } catch (error) {
+                console.error('Error opening asset management:', error);
+                showError('rfidStatus', `Error opening asset management: ${error.message}`);
+            }
+        }
+
+        function closeModal() {
+            const modal = document.querySelector('div[style*="position: fixed"]');
+            if (modal) {
+                modal.remove();
+                delete window.currentManagingCardId;
+            }
+        }
+
+        async function addAssetToCard(cardId) {
+            const assetSelect = document.getElementById('assetSelect');
+            const assetFile = assetSelect.value;
+            
+            if (!assetFile) {
+                alert('Please select an asset to add');
+                return;
+            }
+            
+            try {
+                // Get current config
+                const configResponse = await fetch('/config');
+                const configData = await configResponse.json();
+                let configText = configData.config;
+                
+                // Parse current mappings
+                const mappedCards = getCurrentlyMappedCards(configText);
+                const currentAssets = mappedCards[cardId] || [];
+                
+                // Add new asset to array
+                const updatedAssets = [...currentAssets, assetFile];
+                const newMapping = `    "${cardId}": [${updatedAssets.map(asset => `"${asset}"`).join(', ')}],`;
+                
+                // Update config
+                const cardAssetsMatch = configText.match(/CARD_ASSETS\s*=\s*{([^}]*)}/s);
+                if (cardAssetsMatch) {
+                    const currentMappings = cardAssetsMatch[1];
+                    const escapedCardId = cardId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const oldFormatRegex = new RegExp(`\\s*"${escapedCardId}":\\s*"[^"]*",?`, 'g');
+                    const newFormatRegex = new RegExp(`\\s*"${escapedCardId}":\\s*\\[[^\\]]*\\],?`, 'g');
+                    
+                    let updatedMappings = currentMappings.replace(oldFormatRegex, '');
+                    updatedMappings = updatedMappings.replace(newFormatRegex, '');
+                    configText = configText.replace(cardAssetsMatch[1], updatedMappings + '\n' + newMapping);
+                }
+                
+                // Save config
+                const updateResponse = await fetch('/update-config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ config: configText })
+                });
+                
+                if (updateResponse.ok) {
+                    showSuccess('rfidStatus', `Asset "${assetFile}" added to card ${cardId}`);
+                    closeModal();
+                    setTimeout(() => {
+                        loadScannedCards();
+                        loadConfig();
+                    }, 1000);
+                } else {
+                    throw new Error('Failed to update config');
+                }
+                
+            } catch (error) {
+                console.error('Error adding asset to card:', error);
+                alert(`Error adding asset: ${error.message}`);
+            }
+        }
+
+        async function removeAssetFromCard(cardId, assetIndex) {
+            if (!confirm('Are you sure you want to remove this asset from the card?')) {
+                return;
+            }
+            
+            try {
+                // Get current config
+                const configResponse = await fetch('/config');
+                const configData = await configResponse.json();
+                let configText = configData.config;
+                
+                // Parse current mappings
+                const mappedCards = getCurrentlyMappedCards(configText);
+                const currentAssets = mappedCards[cardId] || [];
+                
+                // Remove asset at index
+                const updatedAssets = currentAssets.filter((_, index) => index !== assetIndex);
+                
+                // Update config
+                const cardAssetsMatch = configText.match(/CARD_ASSETS\s*=\s*{([^}]*)}/s);
+                if (cardAssetsMatch) {
+                    const currentMappings = cardAssetsMatch[1];
+                    const escapedCardId = cardId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const oldFormatRegex = new RegExp(`\\s*"${escapedCardId}":\\s*"[^"]*",?`, 'g');
+                    const newFormatRegex = new RegExp(`\\s*"${escapedCardId}":\\s*\\[[^\\]]*\\],?`, 'g');
+                    
+                    let updatedMappings = currentMappings.replace(oldFormatRegex, '');
+                    updatedMappings = updatedMappings.replace(newFormatRegex, '');
+                    
+                    if (updatedAssets.length > 0) {
+                        // Update with remaining assets
+                        const newMapping = `    "${cardId}": [${updatedAssets.map(asset => `"${asset}"`).join(', ')}],`;
+                        configText = configText.replace(cardAssetsMatch[1], updatedMappings + '\n' + newMapping);
+                    } else {
+                        // Remove card completely if no assets left
+                        configText = configText.replace(cardAssetsMatch[1], updatedMappings);
+                    }
+                }
+                
+                // Save config
+                const updateResponse = await fetch('/update-config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ config: configText })
+                });
+                
+                if (updateResponse.ok) {
+                    showSuccess('rfidStatus', `Asset removed from card ${cardId}`);
+                    closeModal();
+                    setTimeout(() => {
+                        loadScannedCards();
+                        loadConfig();
+                    }, 1000);
+                } else {
+                    throw new Error('Failed to update config');
+                }
+                
+            } catch (error) {
+                console.error('Error removing asset from card:', error);
+                alert(`Error removing asset: ${error.message}`);
+            }
         }
     </script>
 </body>
