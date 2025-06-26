@@ -438,9 +438,10 @@
                 this.isConnected = false;
                 this.lastAssetTimestamp = null;
                 
-                // Add history tracking
-                this.assetHistory = [];
-                this.currentHistoryIndex = -1;
+                // Card-based navigation (replaces history-based)
+                this.currentCardId = null;
+                this.currentAssetIndex = 0;
+                this.totalAssets = 1;
                 
                 this.initElements();
                 this.startPolling();
@@ -477,10 +478,10 @@
                 const navContainer = document.createElement('div');
                 navContainer.id = 'navigationControls';
                 navContainer.innerHTML = `
-                    <button id="prevAsset" onclick="window.player.navigateHistory('back')" disabled>
+                    <button id="prevAsset" onclick="window.player.navigateCardAssets('prev')" disabled>
                         <span>⬅️</span><span>Previous</span>
                     </button>
-                    <button id="nextAsset" onclick="window.player.navigateHistory('forward')" disabled>
+                    <button id="nextAsset" onclick="window.player.navigateCardAssets('next')" disabled>
                         <span>Next</span><span>➡️</span>
                     </button>
                 `;
@@ -502,21 +503,21 @@
                 `;
                 advancedControls.insertBefore(toggleContainer, advancedControls.firstChild);
 
-                // Update RFID simulator with third card
+                // Update RFID simulator with new cards
                 const rfidSimulator = document.getElementById('rfidSimulator');
                 rfidSimulator.innerHTML = `
                     <h3>🏷️ RFID Card Simulation</h3>
-                    <div class="rfid-card" onclick="simulateRfid('3800132D9B9D')">
-                        Card 1 (Video)
-                        <small>3800132D9B9D</small>
+                    <div class="rfid-card" onclick="simulateRfid('9b:8a:49:06:5e')">
+                        Card 1 (1 asset)
+                        <small>9b:8a:49:06:5e</small>
                     </div>
-                    <div class="rfid-card" onclick="simulateRfid('38001370E9B2')">
-                        Card 2 (Image)
-                        <small>38001370E9B2</small>
+                    <div class="rfid-card" onclick="simulateRfid('88:04:e1:11:7c')">
+                        Card 2 (2 assets)
+                        <small>88:04:e1:11:7c</small>
                     </div>
-                    <div class="rfid-card" onclick="simulateRfid('38001370E9B3')">
-                        Card 3 (Video)
-                        <small>38001370E9B3</small>
+                    <div class="rfid-card" onclick="simulateRfid('3c:04:1c:06:22')">
+                        Card 3 (3 assets)
+                        <small>3c:04:1c:06:22</small>
                     </div>
                     <div class="rfid-card" onclick="simulateRfid('UNKNOWN-CARD-123')">
                         Unknown Card (Test)
@@ -526,79 +527,58 @@
             }
 
             updateNavigationButtons() {
-                // Linear navigation with clear boundaries
-                const canGoPrev = this.currentHistoryIndex > 0;
-                const canGoNext = this.currentHistoryIndex < this.assetHistory.length - 1;
+                // Card-based navigation - only enable if current card has multiple assets
+                const canNavigate = this.currentCardId && this.totalAssets > 1;
+                const canGoPrev = canNavigate;
+                const canGoNext = canNavigate;
 
                 this.prevButton.disabled = !canGoPrev;
                 this.nextButton.disabled = !canGoNext;
 
-                console.log('Navigation state updated (linear):', {
-                    currentIndex: this.currentHistoryIndex,
-                    historyLength: this.assetHistory.length,
-                    canGoPrev,
-                    canGoNext,
-                    history: this.assetHistory
+                console.log('Navigation state updated (card-based):', {
+                    currentCard: this.currentCardId,
+                    currentAssetIndex: this.currentAssetIndex,
+                    totalAssets: this.totalAssets,
+                    canNavigate: canNavigate
                 });
             }
 
-            async navigateHistory(direction) {
-                console.log('Starting linear navigation:', {
-                    direction,
-                    currentIndex: this.currentHistoryIndex,
-                    historyLength: this.assetHistory.length,
-                    history: this.assetHistory
-                });
-
-                let targetIndex = this.currentHistoryIndex;
-                
-                if (direction === 'back' && this.currentHistoryIndex > 0) {
-                    targetIndex--;
-                } else if (direction === 'forward' && this.currentHistoryIndex < this.assetHistory.length - 1) {
-                    targetIndex++;
-                } else {
-                    console.log('Cannot navigate: at boundary', {
-                        direction,
-                        currentIndex: this.currentHistoryIndex,
-                        historyLength: this.assetHistory.length,
-                        atStart: this.currentHistoryIndex === 0,
-                        atEnd: this.currentHistoryIndex === this.assetHistory.length - 1
-                    });
+            async navigateCardAssets(direction) {
+                if (!this.currentCardId || this.totalAssets <= 1) {
+                    console.log('Cannot navigate: no current card or single asset');
                     return;
                 }
 
-                const historyItem = this.assetHistory[targetIndex];
-                console.log('Navigating to:', {
-                    targetIndex,
-                    historyItem,
-                    currentHistoryLength: this.assetHistory.length
+                console.log('Starting card asset navigation:', {
+                    direction,
+                    currentCard: this.currentCardId,
+                    currentIndex: this.currentAssetIndex,
+                    totalAssets: this.totalAssets
                 });
-                
-                // Update the current index before sending the request
-                this.currentHistoryIndex = targetIndex;
-                
-                // Use the same endpoint as RFID triggers
+
                 try {
-                    await fetch(`http://${this.serverHost}:${this.serverPort}/play`, {
+                    const response = await fetch(`http://${this.serverHost}:${this.serverPort}/navigate`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({
-                            card_id: historyItem.card_id,
-                            asset_file: historyItem.asset_file,
+                            card_id: this.currentCardId,
+                            direction: direction,
                             timestamp: new Date().toISOString()
                         })
                     });
 
-                    // Update navigation buttons immediately after sending request
-                    this.updateNavigationButtons();
+                    if (response.ok) {
+                        const result = await response.json();
+                        console.log('Navigation successful:', result);
+                    } else {
+                        console.error('Navigation failed:', response.status);
+                        this.showNotification('Failed to navigate assets', 'error');
+                    }
                 } catch (error) {
-                    // Revert the index if the request fails
-                    this.currentHistoryIndex = targetIndex + (direction === 'forward' ? -1 : 1);
-                    console.error('Navigation trigger error:', error);
-                    this.showNotification('Failed to trigger navigation', 'error');
-                    this.updateNavigationButtons();
+                    console.error('Navigation error:', error);
+                    this.showNotification('Failed to navigate assets', 'error');
                 }
             }
 
@@ -623,7 +603,9 @@
                             await this.playAsset(
                                 data.last_asset.asset_file, 
                                 data.last_asset.asset_type, 
-                                data.last_asset.card_id
+                                data.last_asset.card_id,
+                                data.last_asset.asset_index || 0,
+                                data.last_asset.total_assets || 1
                             );
                         }
 
@@ -649,50 +631,19 @@
                 this.assetCountEl.textContent = this.assetCount;
             }
             
-            async playAsset(assetFile, assetType, cardId = 'Unknown', addToHistory = true) {
-                // Add to history if it's a new asset
-                if (addToHistory) {
-                    const newAsset = { 
-                        asset_file: assetFile, 
-                        asset_type: assetType, 
-                        card_id: cardId 
-                    };
-
-                    // Find if this asset already exists in history
-                    const existingIndex = this.assetHistory.findIndex(item => 
-                        item.asset_file === assetFile && 
-                        item.card_id === cardId
-                    );
-
-                    if (existingIndex !== -1) {
-                        // If we're moving to an existing asset, just update the index
-                        this.currentHistoryIndex = existingIndex;
-                    } else {
-                        // If we're not at the end of history, truncate forward history
-                        if (this.currentHistoryIndex < this.assetHistory.length - 1) {
-                            this.assetHistory = this.assetHistory.slice(0, this.currentHistoryIndex + 1);
-                        }
-                        
-                        // Add new asset to history
-                        this.assetHistory.push(newAsset);
-                        this.currentHistoryIndex = this.assetHistory.length - 1;
-                    }
-
-                    console.log('History updated:', {
-                        newAsset,
-                        currentIndex: this.currentHistoryIndex,
-                        historyLength: this.assetHistory.length,
-                        history: this.assetHistory
-                    });
-                }
+            async playAsset(assetFile, assetType, cardId = 'Unknown', assetIndex = 0, totalAssets = 1) {
+                // Update card-based navigation state
+                this.currentCardId = cardId;
+                this.currentAssetIndex = assetIndex;
+                this.totalAssets = totalAssets;
 
                 this.lastCard = cardId;
                 this.currentAsset = assetFile;
                 this.lastCardEl.textContent = cardId;
-                this.currentAssetEl.textContent = assetFile;
+                this.currentAssetEl.textContent = `${assetFile} (${assetIndex + 1}/${totalAssets})`;
                 
                 const emoji = assetType === 'video' ? '🎬' : '🖼️';
-                this.showNotification(`${emoji} ${assetType}: ${assetFile}`, 'info');
+                this.showNotification(`${emoji} ${assetType}: ${assetFile} (${assetIndex + 1}/${totalAssets})`, 'info');
                 
                 // Update navigation visibility if enabled
                 const navToggle = document.getElementById('navigationToggle');
@@ -842,20 +793,19 @@
 
             toggleNavigation(enabled) {
                 const navControls = document.getElementById('navigationControls');
-                if (enabled && this.assetHistory.length > 1) {
+                if (enabled && this.currentCardId && this.totalAssets > 1) {
                     navControls.classList.add('visible');
-                    console.log('Linear navigation enabled:', {
-                        historyLength: this.assetHistory.length,
-                        currentIndex: this.currentHistoryIndex,
-                        currentAsset: this.assetHistory[this.currentHistoryIndex]?.asset_file || 'None',
-                        canGoPrev: this.currentHistoryIndex > 0,
-                        canGoNext: this.currentHistoryIndex < this.assetHistory.length - 1
+                    console.log('Card navigation enabled:', {
+                        currentCard: this.currentCardId,
+                        totalAssets: this.totalAssets,
+                        currentAssetIndex: this.currentAssetIndex
                     });
                 } else {
                     navControls.classList.remove('visible');
                     console.log('Navigation disabled:', {
-                        reason: this.assetHistory.length <= 1 ? 'Insufficient history items' : 'Manually disabled',
-                        historyLength: this.assetHistory.length
+                        reason: !this.currentCardId ? 'No current card' : this.totalAssets <= 1 ? 'Single asset card' : 'Manually disabled',
+                        currentCard: this.currentCardId,
+                        totalAssets: this.totalAssets
                     });
                 }
                 this.updateNavigationButtons();
@@ -942,10 +892,10 @@
             }
             // Add navigation shortcuts
             if (e.key === 'ArrowLeft' && window.player) {
-                window.player.navigateHistory('back');
+                window.player.navigateCardAssets('prev');
             }
             if (e.key === 'ArrowRight' && window.player) {
-                window.player.navigateHistory('forward');
+                window.player.navigateCardAssets('next');
             }
         });
 
@@ -954,27 +904,26 @@
             console.log('Fullscreen changed:', document.fullscreenElement ? 'Entered' : 'Exited');
         });
 
-        // RFID Card Configuration
+        // RFID Card Configuration - Now matches server config
         const RFID_CARD_MAPPING = {
-            '3800132D9B9D': '1.mov',
-            '38001370E9B2': '2.jpg', 
-            '38001370E9B3': '3.mov'
+            '9b:8a:49:06:5e': ['1.mov'],
+            '88:04:e1:11:7c': ['2.jpg', '3.mov'],
+            '3c:04:1c:06:22': ['4.png', 'Tough-Cats-With-those-buddies-you-389.jpg', '1.mov']
         };
 
         // RFID simulation function
         async function simulateRfid(cardId) {
             try {
-                const assetFile = RFID_CARD_MAPPING[cardId];
-                const isKnownCard = !!assetFile;
+                const cardAssets = RFID_CARD_MAPPING[cardId];
+                const isKnownCard = !!cardAssets;
 
                 if (isKnownCard) {
-                    // Send known card to play endpoint
+                    // Send known card to play endpoint (server will handle multiple assets)
                     await fetch(`http://${window.player.serverHost}:${window.player.serverPort}/play`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             card_id: cardId,
-                            asset_file: assetFile,
                             timestamp: new Date().toISOString()
                         })
                     });

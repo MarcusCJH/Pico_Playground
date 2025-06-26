@@ -41,6 +41,10 @@ class AssetServer:
         self.scanned_cards = {}  # card_id -> {first_seen, last_seen, scan_count, mapped}
         self.unknown_cards = {}  # card_id -> {first_seen, last_seen, scan_count}
         
+        # Multi-asset support per card
+        self.card_asset_indices = {}  # card_id -> current_asset_index
+        self.current_card_id = None
+        
         os.makedirs(self.assets_folder, exist_ok=True)
         logger.info(f"Asset server initialized. Assets folder: {os.path.abspath(self.assets_folder)}")
     
@@ -48,7 +52,83 @@ class AssetServer:
         """Get full path to asset file"""
         return os.path.join(self.assets_folder, filename)
     
-    def play_asset(self, filename, card_id=""):
+    def get_card_assets(self, card_id):
+        """Get all assets for a specific card"""
+        try:
+            from importlib import reload
+            import config
+            reload(config)
+            
+            card_assets = getattr(config, 'CARD_ASSETS', {})
+            assets = card_assets.get(card_id, [])
+            
+            # Handle both old format (string) and new format (list)
+            if isinstance(assets, str):
+                return [assets]
+            elif isinstance(assets, list):
+                return assets
+            else:
+                return []
+                
+        except Exception as e:
+            logger.error(f"Error getting card assets: {e}")
+            return []
+    
+    def play_card_asset(self, card_id, asset_index=None):
+        """Play asset for a card, optionally specifying index"""
+        assets = self.get_card_assets(card_id)
+        
+        if not assets:
+            logger.error(f"No assets found for card: {card_id}")
+            return False
+        
+        # Initialize or get current index for this card
+        if card_id not in self.card_asset_indices:
+            self.card_asset_indices[card_id] = 0
+        
+        # Use specified index or current index
+        if asset_index is not None:
+            if 0 <= asset_index < len(assets):
+                self.card_asset_indices[card_id] = asset_index
+            else:
+                logger.error(f"Invalid asset index {asset_index} for card {card_id}")
+                return False
+        
+        current_index = self.card_asset_indices[card_id]
+        filename = assets[current_index]
+        
+        # Set current card
+        self.current_card_id = card_id
+        
+        return self.play_asset(filename, card_id, current_index, len(assets))
+    
+    def navigate_card_assets(self, card_id, direction):
+        """Navigate through assets of a specific card"""
+        assets = self.get_card_assets(card_id)
+        
+        if not assets or len(assets) <= 1:
+            return False
+        
+        if card_id not in self.card_asset_indices:
+            self.card_asset_indices[card_id] = 0
+        
+        current_index = self.card_asset_indices[card_id]
+        
+        if direction == 'next':
+            new_index = (current_index + 1) % len(assets)
+        elif direction == 'prev':
+            new_index = (current_index - 1) % len(assets)
+        else:
+            return False
+        
+        self.card_asset_indices[card_id] = new_index
+        filename = assets[new_index]
+        
+        logger.info(f"Navigating card {card_id} assets: {direction} to index {new_index} ({filename})")
+        
+        return self.play_asset(filename, card_id, new_index, len(assets))
+
+    def play_asset(self, filename, card_id="", asset_index=0, total_assets=1):
         """Play an asset file (video or image) and notify web clients"""
         asset_path = self.get_asset_path(filename)
         
@@ -62,6 +142,8 @@ class AssetServer:
             'asset_file': filename,
             'asset_type': asset_type,
             'card_id': card_id,
+            'asset_index': asset_index,
+            'total_assets': total_assets,
             'timestamp': datetime.now().isoformat()
         }
         
@@ -70,7 +152,7 @@ class AssetServer:
             self.track_card_scan(card_id, is_mapped=True)
         
         self.assets_played += 1
-        logger.info(f"Asset triggered: {filename} ({asset_type}) (Card: {card_id})")
+        logger.info(f"Asset triggered: {filename} ({asset_type}) (Card: {card_id}, {asset_index + 1}/{total_assets})")
         return True
     
     def get_asset_type(self, filename):
@@ -373,25 +455,38 @@ class RequestHandler(BaseHTTPRequestHandler):
                     post_data = self.rfile.read(content_length)
                     
                     data = json.loads(post_data.decode('utf-8'))
-                    asset_file = data.get('asset_file', '')
                     card_id = data.get('card_id', '')
+                    asset_file = data.get('asset_file', '')  # Optional - for backward compatibility
+                    asset_index = data.get('asset_index', None)  # Optional - to specify which asset
                     
-                    if not asset_file:
-                        self.send_safe_response(400, 'text/plain', 'No asset file specified')
+                    if not card_id:
+                        self.send_safe_response(400, 'text/plain', 'No card_id specified')
                         return
                     
-                    logger.info(f"RFID Card {card_id} triggered asset: {asset_file}")
+                    logger.info(f"RFID Card {card_id} scanned")
                     
-                    success = self.asset_server.play_asset(asset_file, card_id)
+                    # Use new multi-asset method
+                    success = self.asset_server.play_card_asset(card_id, asset_index)
                     
-                    response = {
-                        "success": success,
-                        "asset_file": asset_file,
-                        "card_id": card_id,
-                        "message": f"Asset triggered: {asset_file}" if success else f"Failed to trigger {asset_file}",
-                        "timestamp": datetime.now().isoformat(),
-                        "web_player_url": f"http://{self.headers.get('Host', 'localhost')}/"
-                    }
+                    if success:
+                        asset_info = self.asset_server.last_asset_info
+                        response = {
+                            "success": True,
+                            "card_id": card_id,
+                            "asset_file": asset_info['asset_file'],
+                            "asset_index": asset_info['asset_index'],
+                            "total_assets": asset_info['total_assets'],
+                            "message": f"Asset triggered: {asset_info['asset_file']} ({asset_info['asset_index'] + 1}/{asset_info['total_assets']})",
+                            "timestamp": datetime.now().isoformat(),
+                            "web_player_url": f"http://{self.headers.get('Host', 'localhost')}/"
+                        }
+                    else:
+                        response = {
+                            "success": False,
+                            "card_id": card_id,
+                            "message": f"Failed to trigger assets for card {card_id}",
+                            "timestamp": datetime.now().isoformat()
+                        }
                     
                     self.send_json_response(response)
                     
@@ -410,6 +505,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.handle_file_delete()
             elif self.path == '/unknown-card':
                 self.handle_unknown_card()
+            elif self.path == '/navigate':
+                self.handle_navigation()
             else:
                 self.send_safe_response(404, 'text/plain', 'Not Found')
                 
@@ -619,6 +716,51 @@ class RequestHandler(BaseHTTPRequestHandler):
             
         except Exception as e:
             logger.error(f"Error handling unknown card scan: {e}")
+            self.send_safe_response(500, 'text/plain', str(e))
+
+    def handle_navigation(self):
+        """Handle navigation through card assets"""
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            data = json.loads(post_data.decode('utf-8'))
+            
+            card_id = data.get('card_id')
+            direction = data.get('direction')
+            
+            if not card_id:
+                self.send_safe_response(400, 'text/plain', 'Missing card_id parameter')
+                return
+                
+            if direction not in ['next', 'prev']:
+                self.send_safe_response(400, 'text/plain', 'Invalid direction (must be "next" or "prev")')
+                return
+            
+            success = self.asset_server.navigate_card_assets(card_id, direction)
+            
+            if success:
+                asset_info = self.asset_server.last_asset_info
+                response = {
+                    "success": True,
+                    "card_id": card_id,
+                    "direction": direction,
+                    "asset_file": asset_info['asset_file'],
+                    "asset_index": asset_info['asset_index'],
+                    "total_assets": asset_info['total_assets'],
+                    "message": f"Navigated {direction} to {asset_info['asset_file']} ({asset_info['asset_index'] + 1}/{asset_info['total_assets']})"
+                }
+            else:
+                response = {
+                    "success": False,
+                    "card_id": card_id,
+                    "direction": direction,
+                    "message": "Navigation failed or no multiple assets for this card"
+                }
+            
+            self.send_json_response(response)
+            
+        except Exception as e:
+            logger.error(f"Error handling navigation: {e}")
             self.send_safe_response(500, 'text/plain', str(e))
 
 def create_handler(asset_server):

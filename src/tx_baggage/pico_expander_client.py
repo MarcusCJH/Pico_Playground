@@ -250,14 +250,16 @@ class ExhibitionClientPico:
         self.wifi_connected = False
         self.last_card = None
         self.last_scan_time = 0
-        self.scan_cooldown = 3.0
+        self.scan_cooldown = 1.5  # Reduced from 3.0 seconds
         self.scan_count = 0
         
         # Card presence tracking to prevent repeated scans
         self.card_present = False
         self.no_card_count = 0
+        self.card_detected_count = 0  # Count successful detections
         self.current_card_processed = False
-        self.card_removal_threshold = 20  # Failed reads before considering card removed
+        self.card_removal_threshold = 10  # Failed reads before considering card removed
+        self.card_stability_threshold = 3  # Consecutive detections needed to consider card stable
     
     def setup_hardware(self):
         """Initialize hardware components"""
@@ -429,12 +431,11 @@ class ExhibitionClientPico:
             self.error_feedback()
             return False
     
-    def trigger_asset(self, card_id, asset_file):
-        """Send asset trigger command to server"""
+    def trigger_card_assets(self, card_id):
+        """Send card trigger command to server (now handles multiple assets per card)"""
         try:
             url = f"http://{self.SERVER_IP}:{self.SERVER_PORT}/play"
             data = {
-                "asset_file": asset_file,
                 "card_id": card_id,
                 "timestamp": time.time()
             }
@@ -447,11 +448,22 @@ class ExhibitionClientPico:
             )
             
             success = response.status_code == 200
+            if success:
+                # Parse response to get asset info
+                try:
+                    response_data = response.json()
+                    asset_file = response_data.get('asset_file', 'Unknown')
+                    asset_index = response_data.get('asset_index', 0)
+                    total_assets = response_data.get('total_assets', 1)
+                    print(f"Asset played: {asset_file} ({asset_index + 1}/{total_assets})")
+                except:
+                    pass
+            
             response.close()
             return success
             
         except Exception as e:
-            print(f"Failed to trigger asset: {e}")
+            print(f"Failed to trigger card assets: {e}")
             return False
     
     def trigger_unknown_card(self, card_id):
@@ -491,12 +503,16 @@ class ExhibitionClientPico:
         
         # Prevent processing the same card multiple times while it sits on scanner
         if card_id == self.last_card and self.card_present and self.current_card_processed:
-            return
+            return False  # Return False to indicate no processing occurred
         
         # Enforce cooldown period for the same card
         if card_id == self.last_card and (current_time - self.last_scan_time) < self.scan_cooldown:
             self.card_present = True  # Update presence but don't process
-            return
+            return False  # Return False to indicate no processing occurred
+        
+        # If this is a different card, reset the processed flag
+        if card_id != self.last_card:
+            self.current_card_processed = False
         
         # Process the card
         self.last_card = card_id
@@ -512,15 +528,23 @@ class ExhibitionClientPico:
         self.led.on()
         self.onboard_led.on()
         
-        asset_file = self.card_assets.get(card_id)
+        # Check if card is mapped (handle both old string format and new list format)
+        card_mapping = self.card_assets.get(card_id)
+        is_mapped = card_mapping is not None
         
-        if asset_file:
-            print(f"Triggering asset: {asset_file}")
-            if self.trigger_asset(card_id, asset_file):
-                print("Asset triggered successfully!")
+        if is_mapped:
+            # Card is mapped, trigger its assets
+            if isinstance(card_mapping, list):
+                asset_count = len(card_mapping)
+                print(f"Triggering card with {asset_count} asset(s): {card_mapping}")
+            else:
+                print(f"Triggering card with 1 asset: {card_mapping}")
+                
+            if self.trigger_card_assets(card_id):
+                print("Card assets triggered successfully!")
                 self.success_feedback()
             else:
-                print("Failed to trigger asset")
+                print("Failed to trigger card assets")
                 self.error_feedback()
         else:
             print(f"Unknown card: {card_id}")
@@ -535,6 +559,8 @@ class ExhibitionClientPico:
         # Turn off LEDs
         self.led.off()
         self.onboard_led.off()
+        
+        return True  # Return True to indicate successful processing
     
     def run(self):
         """Main loop"""
@@ -570,14 +596,19 @@ class ExhibitionClientPico:
                     # Card detected, get UID
                     (status, uid) = self.rfid.MFRC522_Anticoll()
                     if status == self.rfid.MI_OK:
-                        self.process_card(uid)
-                        self.no_card_count = 0  # Reset no-card counter
+                        # Card successfully detected
+                        self.card_detected_count += 1
+                        self.no_card_count = 0  # Reset failure counter
+                        
+                        card_processed = self.process_card(uid)
                     else:
-                        # Card detection failed
+                        # Card detection failed at UID level
                         self.no_card_count += 1
+                        self.card_detected_count = 0
                 else:
-                    # No card detected
+                    # No card detected at request level
                     self.no_card_count += 1
+                    self.card_detected_count = 0
                 
                 # If we haven't detected a card for several consecutive reads,
                 # consider the card removed
@@ -585,7 +616,7 @@ class ExhibitionClientPico:
                     self.card_present = False
                     self.current_card_processed = False  # Reset processed flag when card is removed
                     # Don't reset last_card - keep it for cooldown purposes
-                    print("Card removed from scanner")
+                    print("Card removed - ready for next scan")
                 
                 time.sleep(0.1)
                 
