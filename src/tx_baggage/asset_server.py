@@ -44,6 +44,7 @@ class AssetServer:
         # Multi-asset support per card
         self.card_asset_indices = {}  # card_id -> current_asset_index
         self.current_card_id = None
+        self.card_removal_timestamp = None  # Track when card was removed
         
         os.makedirs(self.assets_folder, exist_ok=True)
         logger.info(f"Asset server initialized. Assets folder: {os.path.abspath(self.assets_folder)}")
@@ -127,6 +128,19 @@ class AssetServer:
         logger.info(f"Navigating card {card_id} assets: {direction} to index {new_index} ({filename})")
         
         return self.play_asset(filename, card_id, new_index, len(assets))
+    
+    def remove_card(self, card_id):
+        """Handle card removal - reset to splash screen"""
+        self.current_card_id = None
+        self.card_removal_timestamp = datetime.now().isoformat()
+        self.last_asset_info = {
+            'action': 'card_removed',
+            'card_id': card_id,
+            'timestamp': self.card_removal_timestamp
+        }
+        
+        logger.info(f"Card {card_id} removed - returning to splash screen")
+        return True
 
     def play_asset(self, filename, card_id="", asset_index=0, total_assets=1):
         """Play an asset file (video or image) and notify web clients"""
@@ -507,6 +521,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.handle_unknown_card()
             elif self.path == '/navigate':
                 self.handle_navigation()
+            elif self.path == '/card-removed':
+                self.handle_card_removal()
             else:
                 self.send_safe_response(404, 'text/plain', 'Not Found')
                 
@@ -761,6 +777,35 @@ class RequestHandler(BaseHTTPRequestHandler):
             
         except Exception as e:
             logger.error(f"Error handling navigation: {e}")
+            self.send_safe_response(500, 'text/plain', str(e))
+
+    def handle_card_removal(self):
+        """Handle card removal requests"""
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            data = json.loads(post_data.decode('utf-8'))
+            
+            card_id = data.get('card_id')
+            
+            if not card_id:
+                self.send_safe_response(400, 'text/plain', 'Missing card_id parameter')
+                return
+            
+            success = self.asset_server.remove_card(card_id)
+            
+            response = {
+                "success": success,
+                "card_id": card_id,
+                "action": "card_removed",
+                "message": f"Card {card_id} removed - returning to splash screen",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            self.send_json_response(response)
+            
+        except Exception as e:
+            logger.error(f"Error handling card removal: {e}")
             self.send_safe_response(500, 'text/plain', str(e))
 
 def create_handler(asset_server):

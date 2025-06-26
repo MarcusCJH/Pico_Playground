@@ -492,6 +492,32 @@ class ExhibitionClientPico:
             print(f"Failed to log unknown card: {e}")
             return False
     
+    def trigger_card_removal(self, card_id):
+        """Send card removal signal to server to return to splash screen"""
+        try:
+            url = f"http://{self.SERVER_IP}:{self.SERVER_PORT}/card-removed"
+            data = {
+                "card_id": card_id,
+                "timestamp": time.time()
+            }
+            
+            response = urequests.post(
+                url, 
+                data=json.dumps(data),
+                headers={'Content-Type': 'application/json'},
+                timeout=10
+            )
+            
+            success = response.status_code == 200
+            if success:
+                print(f"Card {card_id} removal signaled to server")
+            response.close()
+            return success
+            
+        except Exception as e:
+            print(f"Failed to signal card removal: {e}")
+            return False
+    
     def format_uid(self, uid):
         """Format the UID as a hex string with colons between bytes"""
         return ':'.join(f'{x:02x}' for x in uid)
@@ -615,8 +641,12 @@ class ExhibitionClientPico:
                 if self.no_card_count >= self.card_removal_threshold and self.card_present:
                     self.card_present = False
                     self.current_card_processed = False  # Reset processed flag when card is removed
-                    # Don't reset last_card - keep it for cooldown purposes
-                    print("Card removed - ready for next scan")
+                    
+                    # Signal card removal to server to return to splash screen
+                    if self.last_card:
+                        self.trigger_card_removal(self.last_card)
+                    
+                    print("Card removed - returning to splash screen")
                 
                 time.sleep(0.1)
                 

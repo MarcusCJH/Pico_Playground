@@ -600,13 +600,22 @@
                         // Handle asset updates (from both RFID and navigation)
                         if (data.last_asset && data.last_asset.timestamp !== this.lastAssetTimestamp) {
                             this.lastAssetTimestamp = data.last_asset.timestamp;
-                            await this.playAsset(
-                                data.last_asset.asset_file, 
-                                data.last_asset.asset_type, 
-                                data.last_asset.card_id,
-                                data.last_asset.asset_index || 0,
-                                data.last_asset.total_assets || 1
-                            );
+                            
+                            // Check if this is a card removal event
+                            if (data.last_asset.action === 'card_removed') {
+                                console.log('Card removed - returning to splash screen');
+                                this.showWelcomeScreen();
+                                this.showNotification('🏷️ Card removed - Ready for next scan', 'info');
+                            } else {
+                                // Normal asset playback
+                                await this.playAsset(
+                                    data.last_asset.asset_file, 
+                                    data.last_asset.asset_type, 
+                                    data.last_asset.card_id,
+                                    data.last_asset.asset_index || 0,
+                                    data.last_asset.total_assets || 1
+                                );
+                            }
                         }
 
                         this.lastUpdateEl.textContent = new Date().toLocaleTimeString();
@@ -768,6 +777,16 @@
                 this.welcomeScreen.style.display = 'block';
                 this.currentAsset = 'None';
                 this.currentAssetEl.textContent = 'None';
+                
+                // Reset navigation state
+                this.currentCardId = null;
+                this.currentAssetIndex = 0;
+                this.totalAssets = 1;
+                
+                // Hide navigation controls
+                const navControls = document.getElementById('navigationControls');
+                navControls.classList.remove('visible');
+                this.updateNavigationButtons();
             }
 
             showNotification(message, type = 'info') {
