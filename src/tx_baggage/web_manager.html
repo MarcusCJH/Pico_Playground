@@ -653,15 +653,10 @@
                     const currentMappings = cardAssetsMatch[1];
                     const newMapping = `    "${cardId}": ["${assetFile}"],`; // Use array format
                     
-                    // Check if card already exists
+                    // Check if card already exists and replace/add mapping
                     if (currentMappings.includes(`"${cardId}"`)) {
-                        // Replace existing mapping (handle both old and new formats)
-                        const escapedCardId = cardId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                        const oldFormatRegex = new RegExp(`\\s*"${escapedCardId}":\\s*"[^"]*",?`, 'g');
-                        const newFormatRegex = new RegExp(`\\s*"${escapedCardId}":\\s*\\[[^\\]]*\\],?`, 'g');
-                        
-                        let updatedMappings = currentMappings.replace(oldFormatRegex, '');
-                        updatedMappings = updatedMappings.replace(newFormatRegex, '');
+                        // Replace existing mapping
+                        const updatedMappings = removeCardFromMappings(currentMappings, cardId);
                         configText = configText.replace(cardAssetsMatch[1], updatedMappings + '\n' + newMapping);
                     } else {
                         // Add new mapping
@@ -706,6 +701,17 @@
         function formatDateTime(isoString) {
             const date = new Date(isoString);
             return date.toLocaleString();
+        }
+
+        function removeCardFromMappings(mappings, cardId) {
+            // Helper function to remove card from mappings (handles both old and new formats)
+            const escapedCardId = cardId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const oldFormatRegex = new RegExp(`\\s*"${escapedCardId}":\\s*"[^"]*",?`, 'g');
+            const newFormatRegex = new RegExp(`\\s*"${escapedCardId}":\\s*\\[[^\\]]*\\],?`, 'g');
+            
+            let updatedMappings = mappings.replace(oldFormatRegex, '');
+            updatedMappings = updatedMappings.replace(newFormatRegex, '');
+            return updatedMappings;
         }
 
         async function manageCardAssets(cardId) {
@@ -830,12 +836,7 @@
                 const cardAssetsMatch = configText.match(/CARD_ASSETS\s*=\s*{([^}]*)}/s);
                 if (cardAssetsMatch) {
                     const currentMappings = cardAssetsMatch[1];
-                    const escapedCardId = cardId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const oldFormatRegex = new RegExp(`\\s*"${escapedCardId}":\\s*"[^"]*",?`, 'g');
-                    const newFormatRegex = new RegExp(`\\s*"${escapedCardId}":\\s*\\[[^\\]]*\\],?`, 'g');
-                    
-                    let updatedMappings = currentMappings.replace(oldFormatRegex, '');
-                    updatedMappings = updatedMappings.replace(newFormatRegex, '');
+                    const updatedMappings = removeCardFromMappings(currentMappings, cardId);
                     configText = configText.replace(cardAssetsMatch[1], updatedMappings + '\n' + newMapping);
                 }
                 
@@ -885,12 +886,7 @@
                 const cardAssetsMatch = configText.match(/CARD_ASSETS\s*=\s*{([^}]*)}/s);
                 if (cardAssetsMatch) {
                     const currentMappings = cardAssetsMatch[1];
-                    const escapedCardId = cardId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const oldFormatRegex = new RegExp(`\\s*"${escapedCardId}":\\s*"[^"]*",?`, 'g');
-                    const newFormatRegex = new RegExp(`\\s*"${escapedCardId}":\\s*\\[[^\\]]*\\],?`, 'g');
-                    
-                    let updatedMappings = currentMappings.replace(oldFormatRegex, '');
-                    updatedMappings = updatedMappings.replace(newFormatRegex, '');
+                    const updatedMappings = removeCardFromMappings(currentMappings, cardId);
                     
                     if (updatedAssets.length > 0) {
                         // Update with remaining assets

@@ -258,8 +258,10 @@ class ExhibitionClientPico:
         self.no_card_count = 0
         self.card_detected_count = 0  # Count successful detections
         self.current_card_processed = False
-        self.card_removal_threshold = 10  # Failed reads before considering card removed
-        self.card_stability_threshold = 3  # Consecutive detections needed to consider card stable
+        
+        # Constants for card detection
+        self.CARD_REMOVAL_THRESHOLD = 10  # Failed reads before considering card removed
+        self.CARD_STABILITY_THRESHOLD = 3  # Consecutive detections needed to consider card stable
     
     def setup_hardware(self):
         """Initialize hardware components"""
@@ -603,10 +605,8 @@ class ExhibitionClientPico:
             print("Server connection failed!")
         
         print("\nReady to scan RFID cards!")
-        print("Mapped assets:")
-        for card_id, asset_file in self.card_assets.items():
-            print(f"  {card_id} -> {asset_file}")
-        print(f"Scan cooldown: {self.scan_cooldown} seconds")
+        print(f"Mapped cards: {len(self.card_assets)}")
+        print(f"Scan cooldown: {self.scan_cooldown}s")
         
         # Ready indication
         self.beep(800, 0.2)
@@ -638,7 +638,7 @@ class ExhibitionClientPico:
                 
                 # If we haven't detected a card for several consecutive reads,
                 # consider the card removed
-                if self.no_card_count >= self.card_removal_threshold and self.card_present:
+                if self.no_card_count >= self.CARD_REMOVAL_THRESHOLD and self.card_present:
                     self.card_present = False
                     self.current_card_processed = False  # Reset processed flag when card is removed
                     

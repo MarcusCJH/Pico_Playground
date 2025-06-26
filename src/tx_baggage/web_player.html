@@ -503,27 +503,8 @@
                 `;
                 advancedControls.insertBefore(toggleContainer, advancedControls.firstChild);
 
-                // Update RFID simulator with new cards
-                const rfidSimulator = document.getElementById('rfidSimulator');
-                rfidSimulator.innerHTML = `
-                    <h3>🏷️ RFID Card Simulation</h3>
-                    <div class="rfid-card" onclick="simulateRfid('9b:8a:49:06:5e')">
-                        Card 1 (1 asset)
-                        <small>9b:8a:49:06:5e</small>
-                    </div>
-                    <div class="rfid-card" onclick="simulateRfid('88:04:e1:11:7c')">
-                        Card 2 (2 assets)
-                        <small>88:04:e1:11:7c</small>
-                    </div>
-                    <div class="rfid-card" onclick="simulateRfid('3c:04:1c:06:22')">
-                        Card 3 (3 assets)
-                        <small>3c:04:1c:06:22</small>
-                    </div>
-                    <div class="rfid-card" onclick="simulateRfid('UNKNOWN-CARD-123')">
-                        Unknown Card (Test)
-                        <small>UNKNOWN-CARD-123</small>
-                    </div>
-                `;
+                // Initialize RFID simulator with current card mappings
+                this.updateRfidSimulator();
             }
 
             updateNavigationButtons() {
@@ -535,12 +516,35 @@
                 this.prevButton.disabled = !canGoPrev;
                 this.nextButton.disabled = !canGoNext;
 
-                console.log('Navigation state updated (card-based):', {
-                    currentCard: this.currentCardId,
-                    currentAssetIndex: this.currentAssetIndex,
-                    totalAssets: this.totalAssets,
-                    canNavigate: canNavigate
+                // Navigation state updated for card-based navigation
+            }
+
+            updateRfidSimulator() {
+                const rfidSimulator = document.getElementById('rfidSimulator');
+                let cardsHtml = '<h3>🏷️ RFID Card Simulation</h3>';
+                
+                // Add mapped cards from current config
+                let cardNum = 1;
+                Object.entries(RFID_CARD_MAPPING).forEach(([cardId, assets]) => {
+                    const assetCount = Array.isArray(assets) ? assets.length : 1;
+                    cardsHtml += `
+                        <div class="rfid-card" onclick="simulateRfid('${cardId}')">
+                            Card ${cardNum} (${assetCount} asset${assetCount > 1 ? 's' : ''})
+                            <small>${cardId}</small>
+                        </div>
+                    `;
+                    cardNum++;
                 });
+                
+                // Add test unknown card
+                cardsHtml += `
+                    <div class="rfid-card" onclick="simulateRfid('UNKNOWN-CARD-123')">
+                        Unknown Card (Test)
+                        <small>UNKNOWN-CARD-123</small>
+                    </div>
+                `;
+                
+                rfidSimulator.innerHTML = cardsHtml;
             }
 
             async navigateCardAssets(direction) {
@@ -549,12 +553,7 @@
                     return;
                 }
 
-                console.log('Starting card asset navigation:', {
-                    direction,
-                    currentCard: this.currentCardId,
-                    currentIndex: this.currentAssetIndex,
-                    totalAssets: this.totalAssets
-                });
+                console.log(`Navigating ${direction} for card ${this.currentCardId}`);
 
                 try {
                     const response = await fetch(`http://${this.serverHost}:${this.serverPort}/navigate`, {
@@ -814,18 +813,11 @@
                 const navControls = document.getElementById('navigationControls');
                 if (enabled && this.currentCardId && this.totalAssets > 1) {
                     navControls.classList.add('visible');
-                    console.log('Card navigation enabled:', {
-                        currentCard: this.currentCardId,
-                        totalAssets: this.totalAssets,
-                        currentAssetIndex: this.currentAssetIndex
-                    });
+                    console.log(`Card navigation enabled for ${this.currentCardId} (${this.totalAssets} assets)`);
                 } else {
                     navControls.classList.remove('visible');
-                    console.log('Navigation disabled:', {
-                        reason: !this.currentCardId ? 'No current card' : this.totalAssets <= 1 ? 'Single asset card' : 'Manually disabled',
-                        currentCard: this.currentCardId,
-                        totalAssets: this.totalAssets
-                    });
+                    const reason = !this.currentCardId ? 'No current card' : this.totalAssets <= 1 ? 'Single asset card' : 'Manually disabled';
+                    console.log(`Navigation disabled: ${reason}`);
                 }
                 this.updateNavigationButtons();
             }
@@ -879,8 +871,45 @@
             }
         }
         
+        // Load card mappings from server
+        async function loadCardMappings() {
+            try {
+                const response = await fetch(`http://${window.location.hostname || 'localhost'}:${window.location.port || 8080}/config`);
+                if (response.ok) {
+                    const data = await response.json();
+                    // Parse CARD_ASSETS from config
+                    const cardAssetsMatch = data.config.match(/CARD_ASSETS\s*=\s*{([^}]*)}/s);
+                    if (cardAssetsMatch) {
+                        const mappingsText = cardAssetsMatch[1];
+                        const lines = mappingsText.split('\n');
+                        lines.forEach(line => {
+                            // Handle array format: "card_id": ["asset1", "asset2"]
+                            const arrayMatch = line.match(/["']([^"']+)["']\s*:\s*\[([^\]]*)\]/);
+                            if (arrayMatch) {
+                                const cardId = arrayMatch[1];
+                                const assetsText = arrayMatch[2];
+                                const assetMatches = assetsText.match(/["']([^"']+)["']/g);
+                                if (assetMatches) {
+                                    RFID_CARD_MAPPING[cardId] = assetMatches.map(match => match.replace(/["']/g, ''));
+                                }
+                            }
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load card mappings:', error);
+                // Fallback to current config
+                RFID_CARD_MAPPING = {
+                    '9b:8a:49:06:5e': ['1.mov'],
+                    '88:04:e1:11:7c': ['2.jpg', '3.mov'],
+                    '3c:04:1c:06:22': ['4.png', 'Tough-Cats-With-those-buddies-you-389.jpg', '1.mov']
+                };
+            }
+        }
+
         // Initialize player when page loads
-        window.addEventListener('load', () => {
+        window.addEventListener('load', async () => {
+            await loadCardMappings();
             window.player = new ExhibitionAssetPlayer();
         });
         
@@ -920,15 +949,11 @@
 
         // Handle fullscreen changes
         document.addEventListener('fullscreenchange', () => {
-            console.log('Fullscreen changed:', document.fullscreenElement ? 'Entered' : 'Exited');
+            // Fullscreen state changed
         });
 
-        // RFID Card Configuration - Now matches server config
-        const RFID_CARD_MAPPING = {
-            '9b:8a:49:06:5e': ['1.mov'],
-            '88:04:e1:11:7c': ['2.jpg', '3.mov'],
-            '3c:04:1c:06:22': ['4.png', 'Tough-Cats-With-those-buddies-you-389.jpg', '1.mov']
-        };
+        // RFID Card Configuration - Loaded dynamically from server
+        let RFID_CARD_MAPPING = {};
 
         // RFID simulation function
         async function simulateRfid(cardId) {
