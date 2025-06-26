@@ -10,11 +10,11 @@ Images: .jpg, .jpeg, .png, .gif, .bmp, .webp, .svg
 
 Current Demo Files
 ------------------
-- 1.mov - Demo video (mapped to card 3800132D9B9D)
-- 2.jpg - Demo image (mapped to card 38001370E9B2)  
-- 3.mov - Demo video (mapped to card 38001370E9B3)
-- 4.png - Demo image (unmapped)
-- Tough-Cats-With-those-buddies-you-389.jpg - Demo image (unmapped)
+- 1.mov - Demo video (card 9b:8a:49:06:5e)
+- 2.jpg - Demo image (card 88:04:e1:11:7c)  
+- 3.mov - Demo video (card 88:04:e1:11:7c)
+- 4.png - Demo image (card 3c:04:1c:06:22)
+- Tough-Cats-With-those-buddies-you-389.jpg - Demo image (card 3c:04:1c:06:22)
 
 Management
 ----------
@@ -25,7 +25,9 @@ Management
 
 RFID Card Mapping
 -----------------
-Cards are mapped in config.py under CARD_ASSETS:
+Cards are mapped in config.py under CARD_ASSETS (now supports multiple assets per card):
+- Each card can have multiple assets: `["file1.mov", "file2.jpg"]`
+- Navigate through card's assets with Previous/Next buttons
 - Scan unknown cards to see them in the management interface
 - Use dropdown menus to map cards to assets
 - Configuration is automatically updated

@@ -37,9 +37,10 @@ python3 asset_server.py
 ## How It Works
 
 1. **RFID Scan** → Pico detects card with RC522 reader
-2. **Send Request** → Pico sends asset filename to server  
-3. **Play Asset** → Server plays video/image on web interface
-4. **Audio/Visual Feedback** → Pico provides LED and buzzer feedback
+2. **Send Request** → Pico sends card ID to server  
+3. **Play Assets** → Server plays first asset, navigation available for multiple assets
+4. **Card Removal** → Automatically returns to splash screen when card removed
+5. **Audio/Visual Feedback** → Pico provides LED and buzzer feedback
 
 ## Configuration
 
@@ -55,13 +56,19 @@ SERVER_IP = "192.168.1.100"
 SERVER_PORT = 8080
 ```
 
-### Card Mappings
+### Card Mappings (Updated Format)
 ```python
 CARD_ASSETS = {
-    "38:00:13:2d:9b:9d": "1.mov",
-    "38:00:13:70:e9:b2": "2.jpg"
+    "9b:8a:49:06:5e": ["1.mov"],  # 1 asset
+    "88:04:e1:11:7c": ["2.jpg", "3.mov"],  # 2 assets  
+    "3c:04:1c:06:22": ["4.png", "image.jpg", "1.mov"]  # 3 assets
 }
 ```
+
+**New Features:**
+- ✅ **Multiple assets per card** - Cards can now have multiple files
+- ✅ **Card-based navigation** - Navigate through current card's assets only
+- ✅ **Auto return to splash** - Removing card returns to welcome screen
 
 ## Hardware Setup
 
