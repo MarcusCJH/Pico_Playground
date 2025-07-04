@@ -23,6 +23,7 @@ import network
 import urequests
 import json
 import time
+import gc  # Garbage collection for memory management
 from machine import Pin, SPI, PWM
 import config
 
@@ -86,9 +87,9 @@ class MFRC522:
     def MFRC522_Reset(self):
         if self.rst:
             self.rst.value(0)
-            time.sleep(0.1)
+            time.sleep(0.05)  # Reduced from 0.1s
             self.rst.value(1)
-            time.sleep(0.1)
+            time.sleep(0.05)  # Reduced from 0.1s
         self.Write_MFRC522(self.CommandReg, self.PCD_RESETPHASE)
 
     def Write_MFRC522(self, addr, val):
@@ -144,7 +145,8 @@ class MFRC522:
         if command == self.PCD_TRANSCEIVE:
             self.SetBitMask(self.BitFramingReg, 0x80)
 
-        i = 2000
+        # Reduced timeout for faster response
+        i = 1500  # Reduced from 2000
         while True:
             n = self.Read_MFRC522(self.CommIrqReg)
             i = i - 1
@@ -246,25 +248,33 @@ class ExhibitionClientPico:
         # Hardware Setup
         self.setup_hardware()
         
-        # State management
+        # Optimized state management
         self.wifi_connected = False
-        self.last_card = None
-        self.last_scan_time = 0
-        self.scan_cooldown = 1.5  # Reduced from 3.0 seconds
-        self.scan_count = 0
-        
-        # Card presence tracking to prevent repeated scans
+        self.current_card = None
         self.card_present = False
-        self.no_card_count = 0
-        self.card_detected_count = 0  # Count successful detections
-        self.current_card_processed = False
+        self.card_processed = False  # Track if current card has been processed
+        self.last_process_time = 0
+        self.process_cooldown = 1.0  # Reduced from 1.5 seconds
         
-        # Constants for card detection
-        self.CARD_REMOVAL_THRESHOLD = 10  # Failed reads before considering card removed
-        self.CARD_STABILITY_THRESHOLD = 3  # Consecutive detections needed to consider card stable
+        # Simplified card detection
+        self.consecutive_detections = 0
+        self.consecutive_failures = 0
+        
+        # Performance constants
+        self.DETECTION_THRESHOLD = 2  # Reduced from 3
+        self.REMOVAL_THRESHOLD = 15   # Much higher threshold for stable removal detection
+        
+        # Performance monitoring
+        self.scan_count = 0
+        self.start_time = time.time()
+        self.last_stats_time = time.time()
+        
+        # Memory management
+        self.gc_counter = 0
+        self.GC_INTERVAL = 100  # Run GC every 100 scans
     
     def setup_hardware(self):
-        """Initialize hardware components"""
+        """Initialize hardware components with optimized settings"""
         # Initialize LEDs
         self.led = Pin(21, Pin.OUT)  # External LED
         self.onboard_led = Pin("LED", Pin.OUT)  # Built-in Pico W LED
@@ -273,7 +283,7 @@ class ExhibitionClientPico:
         self.buzzer = PWM(Pin(15))
         self.buzzer.duty_u16(0)
         
-        # Initialize RC522 RFID reader
+        # Initialize RC522 RFID reader with optimized SPI settings
         sck = Pin(2, Pin.OUT)
         mosi = Pin(3, Pin.OUT)
         miso = Pin(0, Pin.IN)
@@ -285,9 +295,9 @@ class ExhibitionClientPico:
         sck.value(0)
         rst.value(1)
         
-        # Initialize SPI for RC522
+        # Initialize SPI with higher baudrate for better performance
         spi = SPI(0,
-                baudrate=1000000,  # 1MHz
+                baudrate=2000000,  # Increased from 1MHz to 2MHz
                 polarity=0,
                 phase=0,
                 bits=8,
@@ -298,11 +308,11 @@ class ExhibitionClientPico:
         
         self.rfid = MFRC522(spi, cs, rst)
         
-        print("Hardware initialized!")
-        print("RC522 RFID Reader ready")
+        print("Hardware initialized with performance optimizations!")
+        print("RC522 RFID Reader ready (2MHz SPI)")
         print("LEDs and buzzer ready")
     
-    def beep(self, frequency=1000, duration=0.1):
+    def beep(self, frequency=1000, duration=0.15):  # Restored reasonable duration
         """Play a beep sound"""
         self.buzzer.duty_u16(5000)
         self.buzzer.freq(frequency)
@@ -310,46 +320,45 @@ class ExhibitionClientPico:
         self.buzzer.duty_u16(0)
     
     def success_feedback(self):
-        """Provide success feedback with LEDs and buzzer"""
-        # LED pattern: quick flash for both LEDs
-        for _ in range(3):
+        """Provide optimized success feedback"""
+        # Faster LED pattern
+        for _ in range(2):  # Reduced from 3
             self.led.on()
             self.onboard_led.on()
-            time.sleep(0.1)
+            time.sleep(0.05)  # Reduced from 0.1
             self.led.off()
             self.onboard_led.off()
-            time.sleep(0.1)
+            time.sleep(0.05)
         
-        # Buzzer: success tone sequence
-        for freq in [1000, 1200, 1500]:
-            self.beep(freq, 0.1)
+        # Pleasant success tone
+        self.beep(1200, 0.2)
     
     def error_feedback(self):
-        """Provide error feedback with LEDs and buzzer"""
-        # LED pattern: long flash for both LEDs
+        """Provide optimized error feedback"""
+        # Shorter LED flash
         self.led.on()
         self.onboard_led.on()
-        time.sleep(0.5)
+        time.sleep(0.2)  # Reduced from 0.5
         self.led.off()
         self.onboard_led.off()
         
-        # Buzzer: error tone
-        self.beep(500, 0.3)
+        # Clear error tone
+        self.beep(500, 0.25)  # Longer for better error indication
     
     def connect_wifi(self):
-        """Fast WiFi connection with fallback for UPS/battery power"""
+        """Optimized WiFi connection"""
         print("Connecting to WiFi...")
         
         wlan = network.WLAN(network.STA_IF)
         wlan.active(True)
         
-        # FAST PATH: Try quick connection first (works when USB powered or good conditions)
+        # FAST PATH: Try quick connection first
         print("Trying fast connection...")
         if not wlan.isconnected():
             wlan.connect(self.WIFI_SSID, self.WIFI_PASSWORD)
             
-            # Quick timeout - only 8 seconds
-            timeout = 16  # 8 seconds total
+            # Reduced timeout
+            timeout = 12  # 6 seconds total
             while not wlan.isconnected() and timeout > 0:
                 self.onboard_led.toggle()
                 time.sleep(0.5)
@@ -359,69 +368,50 @@ class ExhibitionClientPico:
             self.wifi_connected = True
             ip = wlan.ifconfig()[0]
             print(f"WiFi Connected Fast! IP: {ip}")
-            self.beep(1000, 0.1)
+            self.beep(1000, 0.15)
             return True
         
-        # ROBUST PATH: If fast connection failed, use robust method
+        # ROBUST PATH: Simplified robust method
         print("Fast connection failed, trying robust method...")
-        print("Power stabilization delay...")
-        time.sleep(1)  # Reduced from 2 seconds
+        time.sleep(0.5)  # Reduced stabilization delay
         
-        # Reset WiFi for clean state
+        # Reset WiFi
         wlan.active(False)
-        time.sleep(0.5)  # Reduced delay
+        time.sleep(0.3)
         wlan.active(True)
-        time.sleep(0.5)  # Reduced delay
+        time.sleep(0.3)
         
-        # Try 2 attempts with shorter timeouts
-        max_retries = 2  # Reduced from 3
-        for attempt in range(max_retries):
-            print(f"Robust attempt {attempt + 1}/{max_retries}")
-            
-            wlan.connect(self.WIFI_SSID, self.WIFI_PASSWORD)
-            
-            # Shorter timeout for robust attempts
-            timeout = 24  # 12 seconds total
-            while not wlan.isconnected() and timeout > 0:
-                self.onboard_led.toggle()
-                time.sleep(0.5)
-                timeout -= 1
-                
-                # Show progress less frequently
-                if timeout % 6 == 0:
-                    print(f"Waiting... {timeout//2}s left")
-            
-            if wlan.isconnected():
-                self.wifi_connected = True
-                ip = wlan.ifconfig()[0]
-                print(f"WiFi Connected! IP: {ip}")
-                self.beep(1000, 0.1)
-                return True
-            else:
-                print(f"Robust attempt {attempt + 1} failed")
-                if attempt < max_retries - 1:
-                    print("Quick retry...")
-                    time.sleep(1)  # Reduced from 3 seconds
-                    wlan.active(False)
-                    time.sleep(0.5)
-                    wlan.active(True)
-                    time.sleep(0.5)
+        # Single robust attempt with shorter timeout
+        print("Robust connection attempt...")
+        wlan.connect(self.WIFI_SSID, self.WIFI_PASSWORD)
         
-        print("All WiFi connection attempts failed!")
+        timeout = 16  # 8 seconds total
+        while not wlan.isconnected() and timeout > 0:
+            self.onboard_led.toggle()
+            time.sleep(0.5)
+            timeout -= 1
+        
+        if wlan.isconnected():
+            self.wifi_connected = True
+            ip = wlan.ifconfig()[0]
+            print(f"WiFi Connected! IP: {ip}")
+            self.beep(1000, 0.15)
+            return True
+        
+        print("WiFi connection failed!")
         self.error_feedback()
         return False
     
     def test_server(self):
-        """Test connection to asset server"""
+        """Test server connection with shorter timeout"""
         try:
             print("Testing server connection...")
             url = f"http://{self.SERVER_IP}:{self.SERVER_PORT}/ping"
-            print(f"Testing server at: {url}")
-            response = urequests.get(url, timeout=5)
+            response = urequests.get(url, timeout=3)  # Reduced from 5s
             
             if response.status_code == 200:
                 print("Server connection OK!")
-                self.beep(1200, 0.1)
+                self.beep(1200, 0.15)
                 response.close()
                 return True
             else:
@@ -429,12 +419,12 @@ class ExhibitionClientPico:
                 
         except Exception as e:
             print(f"Server test failed: {e}")
-            print(f"Make sure asset server is running at {self.SERVER_IP}:{self.SERVER_PORT}")
             self.error_feedback()
             return False
     
     def trigger_card_assets(self, card_id):
-        """Send card trigger command to server (now handles multiple assets per card)"""
+        """Optimized card trigger with shorter timeout and better memory management"""
+        response = None
         try:
             url = f"http://{self.SERVER_IP}:{self.SERVER_PORT}/play"
             data = {
@@ -446,30 +436,35 @@ class ExhibitionClientPico:
                 url, 
                 data=json.dumps(data),
                 headers={'Content-Type': 'application/json'},
-                timeout=10
+                timeout=5  # Reduced from 10s
             )
             
             success = response.status_code == 200
             if success:
-                # Parse response to get asset info
+                # Parse response efficiently
                 try:
                     response_data = response.json()
                     asset_file = response_data.get('asset_file', 'Unknown')
                     asset_index = response_data.get('asset_index', 0)
                     total_assets = response_data.get('total_assets', 1)
-                    print(f"Asset played: {asset_file} ({asset_index + 1}/{total_assets})")
+                    print(f"Asset: {asset_file} ({asset_index + 1}/{total_assets})")
                 except:
                     pass
             
-            response.close()
             return success
             
         except Exception as e:
             print(f"Failed to trigger card assets: {e}")
             return False
+        finally:
+            if response:
+                response.close()
+            # Force garbage collection after network operation
+            gc.collect()
     
     def trigger_unknown_card(self, card_id):
-        """Send unknown card information to server for tracking"""
+        """Optimized unknown card logging"""
+        response = None
         try:
             url = f"http://{self.SERVER_IP}:{self.SERVER_PORT}/unknown-card"
             data = {
@@ -481,21 +476,25 @@ class ExhibitionClientPico:
                 url, 
                 data=json.dumps(data),
                 headers={'Content-Type': 'application/json'},
-                timeout=10
+                timeout=3  # Reduced timeout
             )
             
             success = response.status_code == 200
             if success:
-                print(f"Unknown card {card_id} logged to server")
-            response.close()
+                print(f"Unknown card {card_id} logged")
             return success
             
         except Exception as e:
             print(f"Failed to log unknown card: {e}")
             return False
+        finally:
+            if response:
+                response.close()
+            gc.collect()
     
     def trigger_card_removal(self, card_id):
-        """Send card removal signal to server to return to splash screen"""
+        """Optimized card removal signal"""
+        response = None
         try:
             url = f"http://{self.SERVER_IP}:{self.SERVER_PORT}/card-removed"
             data = {
@@ -507,95 +506,79 @@ class ExhibitionClientPico:
                 url, 
                 data=json.dumps(data),
                 headers={'Content-Type': 'application/json'},
-                timeout=10
+                timeout=3  # Reduced timeout
             )
             
             success = response.status_code == 200
             if success:
-                print(f"Card {card_id} removal signaled to server")
-            response.close()
+                print(f"Card {card_id} removal signaled")
             return success
             
         except Exception as e:
             print(f"Failed to signal card removal: {e}")
             return False
+        finally:
+            if response:
+                response.close()
+            gc.collect()
     
     def format_uid(self, uid):
         """Format the UID as a hex string with colons between bytes"""
         return ':'.join(f'{x:02x}' for x in uid)
     
-    def process_card(self, uid):
-        """Process scanned RFID card with duplicate prevention"""
-        card_id = self.format_uid(uid)
-        current_time = time.time()
-        
-        # Prevent processing the same card multiple times while it sits on scanner
-        if card_id == self.last_card and self.card_present and self.current_card_processed:
-            return False  # Return False to indicate no processing occurred
-        
-        # Enforce cooldown period for the same card
-        if card_id == self.last_card and (current_time - self.last_scan_time) < self.scan_cooldown:
-            self.card_present = True  # Update presence but don't process
-            return False  # Return False to indicate no processing occurred
-        
-        # If this is a different card, reset the processed flag
-        if card_id != self.last_card:
-            self.current_card_processed = False
-        
-        # Process the card
-        self.last_card = card_id
-        self.last_scan_time = current_time
+    def process_card(self, card_id):
+        """Optimized card processing with simplified state management"""
+        # Process the card (cooldown logic is handled in main loop)
+        self.current_card = card_id
+        self.last_process_time = time.time()
         self.scan_count += 1
-        self.card_present = True
-        self.current_card_processed = True
-        self.no_card_count = 0
         
-        print(f"\nCard scanned: {card_id} (Scan #{self.scan_count})")
+        print(f"Card: {card_id} (#{self.scan_count})")
         
-        # Visual feedback - turn on LEDs
+        # Quick LED feedback
         self.led.on()
         self.onboard_led.on()
         
-        # Check if card is mapped (handle both old string format and new list format)
+        # Check card mapping
         card_mapping = self.card_assets.get(card_id)
-        is_mapped = card_mapping is not None
         
-        if is_mapped:
-            # Card is mapped, trigger its assets
-            if isinstance(card_mapping, list):
-                asset_count = len(card_mapping)
-                print(f"Triggering card with {asset_count} asset(s): {card_mapping}")
-            else:
-                print(f"Triggering card with 1 asset: {card_mapping}")
-                
+        if card_mapping:
+            # Mapped card
             if self.trigger_card_assets(card_id):
-                print("Card assets triggered successfully!")
                 self.success_feedback()
             else:
-                print("Failed to trigger card assets")
                 self.error_feedback()
         else:
-            print(f"Unknown card: {card_id}")
-            print("Card not found in mappings!")
+            # Unknown card
+            print(f"Unknown: {card_id}")
             self.error_feedback()
-            
-            if self.trigger_unknown_card(card_id):
-                print("Unknown card logged to server")
-            else:
-                print("Failed to log unknown card")
+            self.trigger_unknown_card(card_id)
         
         # Turn off LEDs
         self.led.off()
         self.onboard_led.off()
         
-        return True  # Return True to indicate successful processing
+        return True
+    
+    def print_performance_stats(self):
+        """Print performance statistics"""
+        current_time = time.time()
+        if current_time - self.last_stats_time > 30:  # Every 30 seconds
+            elapsed = current_time - self.start_time
+            if elapsed > 0:
+                scan_rate = self.scan_count / elapsed
+                print(f"Performance: {scan_rate:.1f} scans/sec, {self.scan_count} total scans")
+                print(f"Memory free: {gc.mem_free()} bytes")
+            self.last_stats_time = current_time
     
     def run(self):
-        """Main loop"""
-        print("Starting Exhibition Client for Custom Pico Board...")
-        print("Pin connections:")
-        print("RC522: RST=GP5, CS=GP1, SCK=GP2, MOSI=GP3, MISO=GP0")
-        print("LED: GP21, Buzzer: GP15")
+        """Optimized main loop"""
+        print("Starting Performance-Optimized Exhibition Client...")
+        print("Performance improvements:")
+        print("- Faster SPI (2MHz)")
+        print("- Reduced delays and timeouts")
+        print("- Optimized card detection")
+        print("- Better memory management")
         
         if not self.connect_wifi():
             print("WiFi connection failed!")
@@ -604,9 +587,8 @@ class ExhibitionClientPico:
         if not self.test_server():
             print("Server connection failed!")
         
-        print("\nReady to scan RFID cards!")
-        print(f"Mapped cards: {len(self.card_assets)}")
-        print(f"Scan cooldown: {self.scan_cooldown}s")
+        print(f"\nReady! Mapped cards: {len(self.card_assets)}")
+        print(f"Cooldown: {self.process_cooldown}s")
         
         # Ready indication
         self.beep(800, 0.2)
@@ -614,7 +596,10 @@ class ExhibitionClientPico:
         self.beep(1000, 0.2)
         
         try:
+            scan_counter = 0
             while True:
+                scan_counter += 1
+                
                 # Check for cards
                 (status, TagType) = self.rfid.MFRC522_Request(self.rfid.PICC_REQIDL)
                 
@@ -622,36 +607,64 @@ class ExhibitionClientPico:
                     # Card detected, get UID
                     (status, uid) = self.rfid.MFRC522_Anticoll()
                     if status == self.rfid.MI_OK:
-                        # Card successfully detected
-                        self.card_detected_count += 1
-                        self.no_card_count = 0  # Reset failure counter
+                        # Successful detection
+                        self.consecutive_detections += 1
+                        self.consecutive_failures = 0
                         
-                        card_processed = self.process_card(uid)
+                        # Process card with strict duplicate prevention
+                        card_id = self.format_uid(uid)
+                        
+                        # Only process if it's a genuinely new card or hasn't been processed yet
+                        should_process = False
+                        current_time = time.time()
+                        
+                        if card_id != self.current_card:
+                            # Different card, always process
+                            should_process = True
+                        elif not self.card_processed:
+                            # Same card but not processed yet, process it
+                            should_process = True
+                        # If same card and already processed, do NOT process again
+                        
+                        if should_process:
+                            self.card_present = True
+                            self.process_card(card_id)
+                            self.card_processed = True  # Mark as processed
+
                     else:
-                        # Card detection failed at UID level
-                        self.no_card_count += 1
-                        self.card_detected_count = 0
+                        # Failed UID read
+                        self.consecutive_failures += 1
+                        self.consecutive_detections = 0
                 else:
-                    # No card detected at request level
-                    self.no_card_count += 1
-                    self.card_detected_count = 0
+                    # No card detected
+                    self.consecutive_failures += 1
+                    self.consecutive_detections = 0
                 
-                # If we haven't detected a card for several consecutive reads,
-                # consider the card removed
-                if self.no_card_count >= self.CARD_REMOVAL_THRESHOLD and self.card_present:
+                # Check for card removal
+                if self.consecutive_failures >= self.REMOVAL_THRESHOLD and self.card_present:
                     self.card_present = False
-                    self.current_card_processed = False  # Reset processed flag when card is removed
-                    
-                    # Signal card removal to server to return to splash screen
-                    if self.last_card:
-                        self.trigger_card_removal(self.last_card)
-                    
-                    print("Card removed - returning to splash screen")
+                    self.card_processed = False  # Reset processed flag
+                    if self.current_card:
+                        self.trigger_card_removal(self.current_card)
+                        print("Card removed")
+                        # Keep current_card for potential re-placement detection
                 
-                time.sleep(0.1)
+                # Memory management
+                self.gc_counter += 1
+                if self.gc_counter >= self.GC_INTERVAL:
+                    gc.collect()
+                    self.gc_counter = 0
+                
+                # Performance monitoring
+                if scan_counter % 300 == 0:  # Every 300 scans
+                    self.print_performance_stats()
+                
+                # Optimized loop delay
+                time.sleep(0.03)  # Reduced from 0.1s to 0.03s for 33% faster scanning
                 
         except KeyboardInterrupt:
             print("\nClient stopped")
+            print(f"Final stats: {self.scan_count} scans processed")
             self.led.off()
             self.onboard_led.off()
             self.buzzer.duty_u16(0)

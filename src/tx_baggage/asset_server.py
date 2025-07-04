@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Asset Player Server
-HTTP server for web-based video and image player
+HTTP server for web-based video and image player with real-time SSE updates
 """
 
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 import sys
@@ -12,6 +12,9 @@ from datetime import datetime
 import logging
 import mimetypes
 import socket
+import threading
+import queue
+import time
 
 # Setup logging
 logging.basicConfig(
@@ -25,29 +28,136 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class AssetServer:
-    # Supported file extensions (centralized)
+    # Supported file extensions
     VIDEO_EXTENSIONS = ('.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.m4v', '.webm')
     IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg')
     ALL_EXTENSIONS = VIDEO_EXTENSIONS + IMAGE_EXTENSIONS
     
     def __init__(self):
-        self.host = "0.0.0.0"  # Listen on all network interfaces
+        self.host = "0.0.0.0"
         self.port = 8080
         self.assets_folder = "./assets/"
         self.assets_played = 0
         self.last_asset_info = None
         
         # RFID card tracking
-        self.scanned_cards = {}  # card_id -> {first_seen, last_seen, scan_count, mapped}
-        self.unknown_cards = {}  # card_id -> {first_seen, last_seen, scan_count}
+        self.scanned_cards = {}
+        self.unknown_cards = {}
         
         # Multi-asset support per card
-        self.card_asset_indices = {}  # card_id -> current_asset_index
+        self.card_asset_indices = {}
         self.current_card_id = None
-        self.card_removal_timestamp = None  # Track when card was removed
+        self.card_removal_timestamp = None
+        
+        # SSE support for real-time updates
+        self.sse_clients = set()
+        self.sse_lock = threading.Lock()
+        self.client_cleanup_timer = None
         
         os.makedirs(self.assets_folder, exist_ok=True)
         logger.info(f"Asset server initialized. Assets folder: {os.path.abspath(self.assets_folder)}")
+        
+        self.start_client_cleanup()
+    
+    def start_client_cleanup(self):
+        """Start periodic cleanup of stale SSE connections"""
+        def cleanup_stale_clients():
+            self.cleanup_stale_connections()
+            self.client_cleanup_timer = threading.Timer(30.0, cleanup_stale_clients)
+            self.client_cleanup_timer.daemon = True
+            self.client_cleanup_timer.start()
+        
+        self.client_cleanup_timer = threading.Timer(30.0, cleanup_stale_clients)
+        self.client_cleanup_timer.daemon = True
+        self.client_cleanup_timer.start()
+    
+    def cleanup_stale_connections(self):
+        """Remove stale SSE connections"""
+        stale_clients = []
+        
+        with self.sse_lock:
+            for client in self.sse_clients.copy():
+                try:
+                    if not hasattr(client, 'sse_connected') or not client.sse_connected:
+                        stale_clients.append(client)
+                    elif hasattr(client, 'wfile'):
+                        client.wfile.flush()
+                except (AttributeError, ConnectionResetError, BrokenPipeError, socket.error, OSError):
+                    stale_clients.append(client)
+        
+        if stale_clients:
+            with self.sse_lock:
+                for client in stale_clients:
+                    self.sse_clients.discard(client)
+                    if hasattr(client, 'sse_connected'):
+                        client.sse_connected = False
+    
+    def add_sse_client(self, client_handler):
+        """Add a new SSE client connection"""
+        client_ip = getattr(client_handler, 'client_address', ['unknown'])[0]
+        
+        with self.sse_lock:
+            # Remove inactive connections from same client
+            existing_clients = []
+            for existing_client in list(self.sse_clients):
+                existing_ip = getattr(existing_client, 'client_address', ['unknown'])[0]
+                if (existing_ip == client_ip and 
+                    hasattr(existing_client, 'sse_connected') and 
+                    not existing_client.sse_connected):
+                    existing_clients.append(existing_client)
+            
+            for old_client in existing_clients:
+                self.sse_clients.discard(old_client)
+            
+            self.sse_clients.add(client_handler)
+            logger.info(f"SSE client connected from {client_ip}. Total clients: {len(self.sse_clients)}")
+    
+    def remove_sse_client(self, client_handler):
+        """Remove an SSE client connection"""
+        with self.sse_lock:
+            if client_handler in self.sse_clients:
+                self.sse_clients.discard(client_handler)
+    
+    def broadcast_sse_event(self, event_type, data):
+        """Broadcast an event to all connected SSE clients"""
+        if not self.sse_clients:
+            return
+            
+        event_data = {
+            'type': event_type,
+            'data': data,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        json_data = json.dumps(event_data)
+        sse_message = f"event: {event_type}\ndata: {json_data}\n\n"
+        
+        # Get clients to broadcast to
+        clients_to_notify = []
+        with self.sse_lock:
+            clients_to_notify = list(self.sse_clients)
+        
+        if not clients_to_notify:
+            return
+            
+        # Send to all clients
+        failed_clients = []
+        successful_broadcasts = 0
+        
+        for client in clients_to_notify:
+            try:
+                client.send_sse_message(sse_message)
+                successful_broadcasts += 1
+            except Exception:
+                failed_clients.append(client)
+        
+        # Clean up failed clients
+        if failed_clients:
+            with self.sse_lock:
+                for client in failed_clients:
+                    self.sse_clients.discard(client)
+                    if hasattr(client, 'sse_connected'):
+                        client.sse_connected = False
     
     def get_asset_path(self, filename):
         """Get full path to asset file"""
@@ -101,7 +211,13 @@ class AssetServer:
         # Set current card
         self.current_card_id = card_id
         
-        return self.play_asset(filename, card_id, current_index, len(assets))
+        success = self.play_asset(filename, card_id, current_index, len(assets))
+        
+        # Broadcast real-time update via SSE
+        if success:
+            self.broadcast_sse_event('asset_play', self.last_asset_info)
+        
+        return success
     
     def navigate_card_assets(self, card_id, direction):
         """Navigate through assets of a specific card"""
@@ -127,7 +243,13 @@ class AssetServer:
         
         logger.info(f"Navigating card {card_id} assets: {direction} to index {new_index} ({filename})")
         
-        return self.play_asset(filename, card_id, new_index, len(assets))
+        success = self.play_asset(filename, card_id, new_index, len(assets))
+        
+        # Broadcast navigation update via SSE
+        if success:
+            self.broadcast_sse_event('navigation', self.last_asset_info)
+        
+        return success
     
     def remove_card(self, card_id):
         """Handle card removal - reset to splash screen"""
@@ -140,6 +262,10 @@ class AssetServer:
         }
         
         logger.info(f"Card {card_id} removed - returning to splash screen")
+        
+        # Broadcast card removal via SSE
+        self.broadcast_sse_event('card_removed', self.last_asset_info)
+        
         return True
 
     def play_asset(self, filename, card_id="", asset_index=0, total_assets=1):
@@ -250,17 +376,36 @@ class AssetServer:
                     
             logger.info(f"Updated card mapping status. {len(current_mappings)} cards mapped.")
             
+            # Broadcast config update via SSE
+            self.broadcast_sse_event('config_updated', {
+                'mapped_cards': len(current_mappings),
+                'timestamp': datetime.now().isoformat()
+            })
+            
         except Exception as e:
             logger.error(f"Error updating card mapping status: {e}")
 
 class RequestHandler(BaseHTTPRequestHandler):
     def __init__(self, *args, asset_server=None, **kwargs):
         self.asset_server = asset_server
+        self.sse_connected = False
         super().__init__(*args, **kwargs)
     
     def log_message(self, format, *args):
         """Override to use our logger"""
         logger.info(f"{self.address_string()} - {format % args}")
+    
+    def send_sse_message(self, message):
+        """Send SSE message to client"""
+        if not self.sse_connected:
+            return
+        try:
+            self.wfile.write(message.encode('utf-8'))
+            self.wfile.flush()
+        except (ConnectionResetError, BrokenPipeError, socket.error, OSError):
+            self.sse_connected = False
+            self.asset_server.remove_sse_client(self)
+            raise
     
     def send_safe_response(self, response_code, content_type="text/plain", content=""):
         """Safely send response, handling broken connections"""
@@ -310,6 +455,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.serve_web_player()
             elif self.path == '/manage':
                 self.serve_management_interface()
+            elif self.path == '/events':
+                self.handle_sse_connection()
             elif self.path == '/config':
                 self.get_config()
             elif self.path == '/ping':
@@ -356,6 +503,80 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.handle_client_disconnect()
         except Exception as e:
             self.handle_server_error(e)
+    
+    def handle_sse_connection(self):
+        """Handle Server-Sent Events connection"""
+        try:
+            # Send SSE headers
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.send_header('Cache-Control', 'no-cache')
+            self.send_header('Connection', 'keep-alive')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Headers', 'Cache-Control')
+            self.end_headers()
+            
+            # Mark as SSE connected and add to server's client list
+            self.sse_connected = True
+            self.connection_id = f"{self.client_address[0]}:{self.client_address[1]}:{int(time.time())}"
+            self.asset_server.add_sse_client(self)
+            
+            # Send initial connection event
+            initial_data = {
+                'status': 'connected',
+                'connection_id': self.connection_id,
+                'server_time': datetime.now().isoformat(),
+                'assets_played': self.asset_server.assets_played,
+                'last_asset': self.asset_server.last_asset_info
+            }
+            self.send_sse_message(f"event: connection\ndata: {json.dumps(initial_data)}\n\n")
+            
+            # Keep connection alive with periodic heartbeat
+            try:
+                heartbeat_count = 0
+                while self.sse_connected:
+                    time.sleep(15)
+                    heartbeat_count += 1
+                    
+                    # Send heartbeat every 4th check (60 seconds)
+                    if heartbeat_count % 4 == 0:
+                        try:
+                            heartbeat_data = {
+                                'type': 'heartbeat',
+                                'timestamp': datetime.now().isoformat()
+                            }
+                            self.send_sse_message(f"event: heartbeat\ndata: {json.dumps(heartbeat_data)}\n\n")
+                        except Exception:
+                            break
+                    
+                    # Send status update every 2nd check (30 seconds)
+                    elif heartbeat_count % 2 == 0:
+                        try:
+                            status_data = {
+                                'type': 'status_update',
+                                'assets_played': self.asset_server.assets_played,
+                                'timestamp': datetime.now().isoformat(),
+                                'last_asset': self.asset_server.last_asset_info
+                            }
+                            self.send_sse_message(f"event: status_update\ndata: {json.dumps(status_data)}\n\n")
+                        except Exception:
+                            break
+                            
+            except (ConnectionResetError, BrokenPipeError, socket.error):
+                pass
+            except Exception:
+                pass
+            finally:
+                self.sse_connected = False
+                self.asset_server.remove_sse_client(self)
+                
+        except Exception as e:
+            logger.error(f"Error setting up SSE connection: {e}")
+            self.sse_connected = False
+            if self in self.asset_server.sse_clients:
+                self.asset_server.remove_sse_client(self)
+    
+
     
     def serve_web_player(self):
         """Serve the web player HTML file"""
@@ -814,7 +1035,7 @@ def create_handler(asset_server):
         return RequestHandler(*args, asset_server=asset_server, **kwargs)
     return handler
 
-class RobustHTTPServer(HTTPServer):
+class RobustThreadingHTTPServer(ThreadingHTTPServer):
     def handle_error(self, request, client_address):
         """Handle server errors gracefully"""
         exc_type, exc_value, exc_traceback = sys.exc_info()
@@ -860,7 +1081,7 @@ def main():
     print("Waiting for RFID triggers...")
     
     handler = create_handler(asset_server)
-    httpd = RobustHTTPServer((asset_server.host, asset_server.port), handler)
+    httpd = RobustThreadingHTTPServer((asset_server.host, asset_server.port), handler)
     
     try:
         httpd.serve_forever()
