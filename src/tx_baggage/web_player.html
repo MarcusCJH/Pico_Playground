@@ -295,34 +295,45 @@
         /* Mobile-friendly adjustments */
         @media (max-width: 768px) {
             #navigationControls {
-                bottom: 20px;
+                bottom: 30px;
                 padding: 0 10px;
-                gap: 25px;
+                gap: 35px;
             }
 
             #navigationControls button {
-                padding: 18px 25px;
-                min-width: 150px;
-                font-size: 16px;
-                height: 60px;
+                padding: 25px 35px;
+                min-width: 180px;
+                font-size: 20px;
+                height: 80px;
+                border-width: 2px;
+            }
+
+            #navigationControls button span {
+                font-size: 24px;  /* Bigger emoji and text */
             }
 
             #controls {
-                bottom: 90px;
+                bottom: 130px;
             }
         }
 
         /* Tablet-friendly adjustments */
         @media (max-width: 1024px) and (min-width: 769px) {
             #navigationControls {
-                gap: 25px;
+                gap: 35px;
+                bottom: 30px;
             }
 
             #navigationControls button {
-                padding: 16px 30px;
-                min-width: 140px;
-                font-size: 15px;
-                height: 55px;
+                padding: 22px 35px;
+                min-width: 160px;
+                font-size: 18px;
+                height: 70px;
+                border-width: 2px;
+            }
+
+            #navigationControls button span {
+                font-size: 22px;  /* Bigger emoji and text */
             }
 
             #controls.with-navigation {
@@ -337,7 +348,7 @@
 
         @media (max-width: 768px) {
             #controls.with-navigation {
-                bottom: 120px;
+                bottom: 150px;
             }
         }
 
@@ -488,7 +499,8 @@
                 
                 // Video event listeners
                 this.mainVideo.addEventListener('ended', () => {
-                    setTimeout(() => this.showWelcomeScreen(), 2000);
+                    // Keep video frozen at last frame - only return to splash on card removal
+                    // Video will stay visible and paused at the last frame
                 });
                 this.mainVideo.addEventListener('error', (e) => {
                     this.showNotification('Video Error', 'error');
