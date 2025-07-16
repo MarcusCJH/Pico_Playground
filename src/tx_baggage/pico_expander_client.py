@@ -579,6 +579,7 @@ class ExhibitionClientPico:
         print("- Reduced delays and timeouts")
         print("- Optimized card detection")
         print("- Better memory management")
+        print("Created by Marcus Chan")
         
         if not self.connect_wifi():
             print("WiFi connection failed!")

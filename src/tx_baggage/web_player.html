@@ -998,6 +998,10 @@
 
         // Initialize player when page loads
         window.addEventListener('load', async () => {
+            console.log('%c✈️ TX Baggage Player', 'color: #FFD700; font-size: 16px; font-weight: bold;');
+            console.log('%cCreated by Marcus Chan', 'color: #FFD700; font-size: 12px; font-style: italic;');
+            console.log('%cPortfolio: https://marcuscjh.github.io', 'color: #FFD700; font-size: 11px;');
+            console.log('---');
             await loadCardMappings();
             window.player = new ExhibitionAssetPlayer();
         });

@@ -1072,6 +1072,8 @@ def main():
     print("2. Update Exhibition client with this server's IP")
     print("3. Map RFID cards to asset filenames in client")
     print("=" * 40)
+    print("Created by Marcus Chan")
+    print()
     
     asset_server = AssetServer()
     local_ip = get_local_ip()

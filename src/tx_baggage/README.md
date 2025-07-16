@@ -2,6 +2,8 @@
 
 A complete RFID-triggered multimedia exhibition system using Raspberry Pi Pico W.
 
+*Created by Marcus Chan*
+
 ## Files
 
 - **`pico_expander_client.py`** - RFID client for custom Pico board with RC522
