@@ -46,6 +46,7 @@ class AssetServer:
         
         # Multi-asset support per card
         self.card_asset_indices = {}
+        self.card_asset_files = {}  # Store asset files list for each card
         self.current_card_id = None
         self.card_removal_timestamp = None
         
@@ -268,7 +269,7 @@ class AssetServer:
         
         return True
 
-    def play_asset(self, filename, card_id="", asset_index=0, total_assets=1):
+    def play_asset(self, filename, card_id="", asset_index=0, total_assets=1, asset_files=None):
         """Play an asset file (video or image) and notify web clients"""
         asset_path = self.get_asset_path(filename)
         
@@ -284,6 +285,7 @@ class AssetServer:
             'card_id': card_id,
             'asset_index': asset_index,
             'total_assets': total_assets,
+            'asset_files': asset_files or [],  # Include asset files for web player navigation
             'timestamp': datetime.now().isoformat()
         }
         
@@ -294,6 +296,68 @@ class AssetServer:
         self.assets_played += 1
         logger.info(f"Asset triggered: {filename} ({asset_type}) (Card: {card_id}, {asset_index + 1}/{total_assets})")
         return True
+    
+    def play_assets_directly(self, asset_files, card_id="", asset_index=0):
+        """Play assets directly from provided filenames (no mapping lookup needed)"""
+        if not asset_files:
+            logger.error("No asset files provided")
+            return False
+        
+        # Ensure asset_files is a list
+        if isinstance(asset_files, str):
+            asset_files = [asset_files]
+        
+        # Validate asset index
+        if asset_index < 0 or asset_index >= len(asset_files):
+            asset_index = 0
+            
+        filename = asset_files[asset_index]
+        
+        # Set current card for navigation
+        self.current_card_id = card_id
+        if card_id:
+            self.card_asset_indices[card_id] = asset_index
+            self.card_asset_files[card_id] = asset_files  # Store asset files for navigation
+        
+        # Play the specific asset
+        success = self.play_asset(filename, card_id, asset_index, len(asset_files), asset_files)
+        
+        # Broadcast real-time update via SSE
+        if success:
+            self.broadcast_sse_event('asset_play', self.last_asset_info)
+        
+        return success
+    
+    def navigate_stored_assets(self, card_id, direction):
+        """Navigate through stored assets for a specific card"""
+        if card_id not in self.card_asset_files:
+            logger.error(f"No stored assets found for card: {card_id}")
+            return False
+        
+        asset_files = self.card_asset_files[card_id]
+        if not asset_files or len(asset_files) <= 1:
+            logger.error(f"Not enough assets to navigate for card: {card_id}")
+            return False
+        
+        # Get current index
+        current_index = self.card_asset_indices.get(card_id, 0)
+        
+        # Calculate new index
+        if direction == 'next':
+            new_index = (current_index + 1) % len(asset_files)
+        elif direction == 'prev':
+            new_index = (current_index - 1) % len(asset_files)
+        else:
+            logger.error(f"Invalid direction: {direction}")
+            return False
+        
+        # Play the asset at the new index
+        success = self.play_assets_directly(asset_files, card_id, new_index)
+        
+        if success:
+            logger.info(f"Navigated card {card_id} assets: {direction} to index {new_index}")
+        
+        return success
     
     def get_asset_type(self, filename):
         """Determine if file is video or image"""
@@ -691,17 +755,17 @@ class RequestHandler(BaseHTTPRequestHandler):
                     
                     data = json.loads(post_data.decode('utf-8'))
                     card_id = data.get('card_id', '')
-                    asset_file = data.get('asset_file', '')  # Optional - for backward compatibility
-                    asset_index = data.get('asset_index', None)  # Optional - to specify which asset
+                    asset_files = data.get('asset_files', [])  # List of asset filenames from client
+                    asset_index = data.get('asset_index', 0)  # Optional - to specify which asset
                     
-                    if not card_id:
-                        self.send_safe_response(400, 'text/plain', 'No card_id specified')
+                    if not asset_files:
+                        self.send_safe_response(400, 'text/plain', 'No asset_files specified')
                         return
                     
-                    logger.info(f"RFID Card {card_id} scanned")
+                    logger.info(f"RFID Card {card_id} scanned - Assets: {asset_files}")
                     
-                    # Use new multi-asset method
-                    success = self.asset_server.play_card_asset(card_id, asset_index)
+                    # Play assets directly from client request
+                    success = self.asset_server.play_assets_directly(asset_files, card_id, asset_index)
                     
                     if success:
                         asset_info = self.asset_server.last_asset_info
@@ -956,7 +1020,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_safe_response(500, 'text/plain', str(e))
 
     def handle_navigation(self):
-        """Handle navigation through card assets"""
+        """Handle navigation through card assets using stored asset files"""
         try:
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
@@ -973,7 +1037,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_safe_response(400, 'text/plain', 'Invalid direction (must be "next" or "prev")')
                 return
             
-            success = self.asset_server.navigate_card_assets(card_id, direction)
+            # Use stored asset files for navigation
+            success = self.asset_server.navigate_stored_assets(card_id, direction)
             
             if success:
                 asset_info = self.asset_server.last_asset_info
@@ -991,7 +1056,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                     "success": False,
                     "card_id": card_id,
                     "direction": direction,
-                    "message": "Navigation failed or no multiple assets for this card"
+                    "message": "Navigation failed - no stored assets or single asset only"
                 }
             
             self.send_json_response(response)

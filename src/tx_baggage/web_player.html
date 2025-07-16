@@ -405,6 +405,10 @@
             </p>
         </div>
 
+        <div id="splashScreen" style="display: none;">
+            <img id="splashImage" alt="Splash Screen" style="width: 100vw; height: 100vh; object-fit: cover; display: block;">
+        </div>
+
         <video id="mainVideo" autoplay muted playsinline>
             Your browser does not support the video tag.
         </video>
@@ -471,6 +475,7 @@
                 this.currentCardId = null;
                 this.currentAssetIndex = 0;
                 this.totalAssets = 1;
+                this.cardAssetFiles = {};  // Store asset files for each card
                 
                 // SSE for real-time updates
                 this.eventSource = null;
@@ -479,12 +484,20 @@
                 this.maxSseReconnectAttempts = 10;
                 this.sseReconnectDelay = 2000;
                 
+                // Splash screen management
+                this.isFirstVisit = true;
+                this.splashImageExists = false;
+                this.splashImageNames = ['splash.png', 'splash.jpg', 'splash.jpeg'];
+                
                 this.initElements();
+                this.checkSplashImage();
                 this.initSSE();
             }
             
             initElements() {
                 this.welcomeScreen = document.getElementById('welcomeScreen');
+                this.splashScreen = document.getElementById('splashScreen');
+                this.splashImage = document.getElementById('splashImage');
                 this.mainVideo = document.getElementById('mainVideo');
                 this.mainImage = document.getElementById('mainImage');
                 this.statusOverlay = document.getElementById('statusOverlay');
@@ -506,6 +519,26 @@
                     this.showNotification('Video Error', 'error');
                     this.showWelcomeScreen();
                 });
+            }
+
+            async checkSplashImage() {
+                for (const imageName of this.splashImageNames) {
+                    try {
+                        const response = await fetch(`http://${this.serverHost}:${this.serverPort}/assets/${imageName}`, { method: 'GET' });
+                        if (response.ok) {
+                            this.splashImageExists = true;
+                            this.splashImage.src = `http://${this.serverHost}:${this.serverPort}/assets/${imageName}`;
+                            console.log(`Splash image found: ${imageName}`);
+                            break;
+                        }
+                    } catch (error) {
+                        // Continue checking other names
+                    }
+                }
+                
+                if (!this.splashImageExists) {
+                    console.log('No splash image found, using welcome screen');
+                }
             }
 
             initNavigationControls() {
@@ -542,7 +575,8 @@
             }
 
             updateNavigationButtons() {
-                const canNavigate = this.currentCardId && this.totalAssets > 1;
+                const cardAssets = this.cardAssetFiles[this.currentCardId] || [];
+                const canNavigate = this.currentCardId && cardAssets.length > 1;
                 this.prevButton.disabled = !canNavigate;
                 this.nextButton.disabled = !canNavigate;
             }
@@ -704,6 +738,12 @@
                     return;
                 }
 
+                // Store asset files for navigation
+                if (assetInfo.card_id && assetInfo.asset_files) {
+                    this.cardAssetFiles = this.cardAssetFiles || {};
+                    this.cardAssetFiles[assetInfo.card_id] = assetInfo.asset_files;
+                }
+
                 this.playAsset(
                     assetInfo.asset_file, 
                     assetInfo.asset_type, 
@@ -738,6 +778,9 @@
             }
 
             async playAsset(assetFile, assetType, cardId = 'Unknown', assetIndex = 0, totalAssets = 1) {
+                // Mark that we're no longer on first visit
+                this.isFirstVisit = false;
+                
                 // Update navigation state
                 this.currentCardId = cardId;
                 this.currentAssetIndex = assetIndex;
@@ -767,7 +810,9 @@
                     }
                 });
 
+                // Hide both welcome and splash screens
                 this.welcomeScreen.style.display = 'none';
+                this.splashScreen.style.display = 'none';
                 
                 if (assetType === 'video') {
                     await this.playVideo(assetFile);
@@ -868,7 +913,20 @@
                 this.mainImage.style.display = 'none';
                 this.mainImage.src = '';
                 
-                this.welcomeScreen.style.display = 'block';
+                // Show welcome screen on first visit, splash screen on subsequent visits
+                if (this.isFirstVisit) {
+                    this.welcomeScreen.style.display = 'block';
+                    this.splashScreen.style.display = 'none';
+                } else {
+                    if (this.splashImageExists) {
+                        this.welcomeScreen.style.display = 'none';
+                        this.splashScreen.style.display = 'block';
+                    } else {
+                        this.welcomeScreen.style.display = 'block';
+                        this.splashScreen.style.display = 'none';
+                    }
+                }
+                
                 this.currentAsset = 'None';
                 this.currentAssetEl.textContent = 'None';
                 
@@ -906,7 +964,8 @@
 
             toggleNavigation(enabled) {
                 const navControls = document.getElementById('navigationControls');
-                if (enabled && this.currentCardId && this.totalAssets > 1) {
+                const cardAssets = this.cardAssetFiles[this.currentCardId] || [];
+                if (enabled && this.currentCardId && cardAssets.length > 1) {
                     navControls.classList.add('visible');
                 } else {
                     navControls.classList.remove('visible');
@@ -1055,11 +1114,18 @@
                 const isKnownCard = !!cardAssets;
 
                 if (isKnownCard) {
+                    // Convert to array format if it's a string
+                    let assetFiles = cardAssets;
+                    if (typeof cardAssets === 'string') {
+                        assetFiles = [cardAssets];
+                    }
+                    
                     const response = await fetch(`http://${window.player.serverHost}:${window.player.serverPort}/play`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             card_id: cardId,
+                            asset_files: assetFiles,  // Send asset files like the pico client does
                             timestamp: new Date().toISOString()
                         })
                     });

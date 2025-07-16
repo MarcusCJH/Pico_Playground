@@ -426,9 +426,21 @@ class ExhibitionClientPico:
         """Optimized card trigger with shorter timeout and better memory management"""
         response = None
         try:
+            # Get assets for this card from local mapping
+            assets = self.card_assets.get(card_id, [])
+            
+            # Handle both old format (string) and new format (list)
+            if isinstance(assets, str):
+                assets = [assets]
+            
+            if not assets:
+                print(f"No assets mapped for card: {card_id}")
+                return False
+                
             url = f"http://{self.SERVER_IP}:{self.SERVER_PORT}/play"
             data = {
-                "card_id": card_id,
+                "card_id": card_id,  # Still send for logging purposes
+                "asset_files": assets,  # Send the actual asset filenames
                 "timestamp": time.time()
             }
             
@@ -459,7 +471,7 @@ class ExhibitionClientPico:
         finally:
             if response:
                 response.close()
-            # Force garbage collection after network operation
+                response = None
             gc.collect()
     
     def trigger_unknown_card(self, card_id):
@@ -539,18 +551,13 @@ class ExhibitionClientPico:
         self.led.on()
         self.onboard_led.on()
         
-        # Check card mapping
-        card_mapping = self.card_assets.get(card_id)
-        
-        if card_mapping:
-            # Mapped card
-            if self.trigger_card_assets(card_id):
-                self.success_feedback()
-            else:
-                self.error_feedback()
+        # Try to trigger card assets (mapping check is now inside trigger_card_assets)
+        if self.trigger_card_assets(card_id):
+            # Successfully triggered assets
+            self.success_feedback()
         else:
-            # Unknown card
-            print(f"Unknown: {card_id}")
+            # Failed to trigger (either no mapping or server error)
+            print(f"Failed to trigger assets for card: {card_id}")
             self.error_feedback()
             self.trigger_unknown_card(card_id)
         
