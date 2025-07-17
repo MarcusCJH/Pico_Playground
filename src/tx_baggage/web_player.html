@@ -489,6 +489,9 @@
                 this.splashImageExists = false;
                 this.splashImageNames = ['splash.png', 'splash.jpg', 'splash.jpeg'];
                 
+                // UI visibility controls
+                this.showNotifications = false;  // Hide notifications by default
+                
                 this.initElements();
                 this.checkSplashImage();
                 this.initSSE();
@@ -942,6 +945,11 @@
             }
 
             showNotification(message, type = 'info') {
+                // Don't show notifications if disabled
+                if (!this.showNotifications) {
+                    return;
+                }
+                
                 const existing = document.querySelectorAll('.notification');
                 existing.forEach(n => n.remove());
 
@@ -996,6 +1004,11 @@
         function toggleStatus() {
             const overlay = document.getElementById('statusOverlay');
             overlay.classList.toggle('hidden');
+            
+            // Also toggle notifications
+            if (window.player) {
+                window.player.showNotifications = !window.player.showNotifications;
+            }
         }
         
         function testAsset(type) {
