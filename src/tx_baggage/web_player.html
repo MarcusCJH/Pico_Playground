@@ -185,55 +185,159 @@
 
 
 
-        /* Navigation Controls */
+        /* Navigation Controls - Full Screen Overlay */
         #navigationControls {
             position: fixed;
-            bottom: 80px;
+            top: 60px; /* Below the settings icon */
             left: 0;
             right: 0;
+            bottom: 0;
             display: flex;
-            justify-content: center;
-            gap: 20px;
-            padding: 0 20px;
             z-index: 150;
             pointer-events: none;
-            transition: opacity 0.3s ease;
             opacity: 0;
             visibility: hidden;
+            transition: opacity 0.3s ease;
         }
 
         #navigationControls.visible {
             opacity: 1;
             visibility: visible;
+            pointer-events: auto;
         }
 
         #navigationControls button {
-            pointer-events: auto;
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            padding: 12px 20px;
-            border-radius: 25px;
+            flex: 1;
+            background: transparent;
+            border: none;
             cursor: pointer;
-            font-size: 14px;
-            transition: all 0.3s ease;
-            backdrop-filter: blur(5px);
-            min-width: 120px;
+            font-size: 0;
+            transition: background-color 0.3s ease;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
+            color: transparent;
         }
 
         #navigationControls button:hover:not(:disabled) {
-            background: rgba(0, 0, 0, 0.9);
-            border-color: rgba(255, 255, 255, 0.5);
-            transform: scale(1.05);
+            background: rgba(255, 255, 255, 0.1);
         }
 
         #navigationControls button:disabled {
-            opacity: 0.5;
             cursor: not-allowed;
+            background: rgba(255, 0, 0, 0.1);
+        }
+
+        /* Quick toggle for mobile */
+        #quickNavToggle {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 12px;
+            z-index: 200;
+            transition: all 0.3s ease;
+            display: none;
+            backdrop-filter: blur(5px);
+        }
+
+        #quickNavToggle:hover {
+            background: rgba(0, 0, 0, 0.9);
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+
+        #quickNavToggle.show {
+            display: block;
+        }
+
+        /* Visual feedback for navigation areas */
+        #navigationControls.visible #prevAsset::before {
+            content: '◀';
+            position: absolute;
+            top: 50%;
+            left: 30px;
+            transform: translateY(-50%);
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 80px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            pointer-events: none;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+        }
+
+        #navigationControls.visible #nextAsset::before {
+            content: '▶';
+            position: absolute;
+            top: 50%;
+            right: 30px;
+            transform: translateY(-50%);
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 80px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            pointer-events: none;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+        }
+
+        #navigationControls.visible button:hover::before {
+            color: rgba(255, 255, 255, 0.8);
+            transform: translateY(-50%) scale(1.2);
+            text-shadow: 0 0 30px rgba(255, 255, 255, 0.8);
+        }
+
+        #navigationControls.visible button:disabled::before {
+            color: rgba(255, 0, 0, 0.3);
+            text-shadow: 0 0 20px rgba(255, 0, 0, 0.3);
+        }
+
+        /* Add label on hover */
+        #navigationControls.visible #prevAsset::after {
+            content: 'Previous';
+            position: absolute;
+            top: 60%;
+            left: 30px;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 16px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        #navigationControls.visible #nextAsset::after {
+            content: 'Next';
+            position: absolute;
+            top: 60%;
+            right: 30px;
+            transform: translateX(50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 16px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        #navigationControls.visible button:hover::after {
+            opacity: 1;
+        }
+
+        #navigationControls.visible button:disabled::after {
+            opacity: 0.3;
+            background: rgba(255, 0, 0, 0.8);
         }
 
         /* Toggle switch styles */
@@ -294,61 +398,10 @@
 
         /* Mobile-friendly adjustments */
         @media (max-width: 768px) {
-            #navigationControls {
+            #quickNavToggle {
+                padding: 12px 20px;
+                font-size: 16px;
                 bottom: 30px;
-                padding: 0 10px;
-                gap: 35px;
-            }
-
-            #navigationControls button {
-                padding: 25px 35px;
-                min-width: 180px;
-                font-size: 20px;
-                height: 80px;
-                border-width: 2px;
-            }
-
-            #navigationControls button span {
-                font-size: 24px;  /* Bigger emoji and text */
-            }
-
-            #controls {
-                bottom: 130px;
-            }
-        }
-
-        /* Tablet-friendly adjustments */
-        @media (max-width: 1024px) and (min-width: 769px) {
-            #navigationControls {
-                gap: 35px;
-                bottom: 30px;
-            }
-
-            #navigationControls button {
-                padding: 22px 35px;
-                min-width: 160px;
-                font-size: 18px;
-                height: 70px;
-                border-width: 2px;
-            }
-
-            #navigationControls button span {
-                font-size: 22px;  /* Bigger emoji and text */
-            }
-
-            #controls.with-navigation {
-                bottom: 150px;
-            }
-        }
-
-        /* Ensure controls don't overlap */
-        #controls.with-navigation {
-            bottom: 140px;
-        }
-
-        @media (max-width: 768px) {
-            #controls.with-navigation {
-                bottom: 150px;
             }
         }
 
@@ -549,17 +602,21 @@
                 const navContainer = document.createElement('div');
                 navContainer.id = 'navigationControls';
                 navContainer.innerHTML = `
-                    <button id="prevAsset" onclick="window.player.navigateCardAssets('prev')" disabled>
-                        <span>⬅️</span><span>Previous</span>
-                    </button>
-                    <button id="nextAsset" onclick="window.player.navigateCardAssets('next')" disabled>
-                        <span>Next</span><span>➡️</span>
-                    </button>
+                    <button id="prevAsset" onclick="window.player.navigateCardAssets('prev')" disabled></button>
+                    <button id="nextAsset" onclick="window.player.navigateCardAssets('next')" disabled></button>
                 `;
                 document.body.appendChild(navContainer);
 
+                // Create quick toggle button for mobile
+                const quickToggle = document.createElement('div');
+                quickToggle.id = 'quickNavToggle';
+                quickToggle.innerHTML = '📱 Navigation (N)';
+                quickToggle.onclick = () => this.quickToggleNavigation();
+                document.body.appendChild(quickToggle);
+
                 this.prevButton = document.getElementById('prevAsset');
                 this.nextButton = document.getElementById('nextAsset');
+                this.quickToggle = quickToggle;
 
                 // Add navigation toggle to advanced controls
                 const advancedControls = document.getElementById('advancedControls');
@@ -938,9 +995,10 @@
                 this.currentAssetIndex = 0;
                 this.totalAssets = 1;
                 
-                // Hide navigation controls
+                // Hide navigation controls and quick toggle
                 const navControls = document.getElementById('navigationControls');
                 navControls.classList.remove('visible');
+                this.quickToggle.classList.remove('show');
                 this.updateNavigationButtons();
             }
 
@@ -975,10 +1033,35 @@
                 const cardAssets = this.cardAssetFiles[this.currentCardId] || [];
                 if (enabled && this.currentCardId && cardAssets.length > 1) {
                     navControls.classList.add('visible');
+                    this.quickToggle.classList.remove('show');
                 } else {
                     navControls.classList.remove('visible');
+                    // Show quick toggle when navigation is available but not active
+                    if (this.currentCardId && cardAssets.length > 1) {
+                        this.quickToggle.classList.add('show');
+                    } else {
+                        this.quickToggle.classList.remove('show');
+                    }
                 }
                 this.updateNavigationButtons();
+            }
+
+            quickToggleNavigation() {
+                const navToggle = document.getElementById('navigationToggle');
+                const navControls = document.getElementById('navigationControls');
+                const isVisible = navControls.classList.contains('visible');
+                
+                if (isVisible) {
+                    // Hide navigation
+                    navControls.classList.remove('visible');
+                    navToggle.checked = false;
+                    this.quickToggle.classList.add('show');
+                } else {
+                    // Show navigation
+                    navControls.classList.add('visible');
+                    navToggle.checked = true;
+                    this.quickToggle.classList.remove('show');
+                }
             }
         }
         
@@ -1109,6 +1192,9 @@
             }
             if (e.key === 'ArrowRight' && window.player) {
                 window.player.navigateCardAssets('next');
+            }
+            if (e.key.toLowerCase() === 'n' && window.player) {
+                window.player.quickToggleNavigation();
             }
         });
 
