@@ -1,7 +1,7 @@
-TX BAGGAGE DEMO SYSTEM - ASSETS FOLDER
+RFID EXHIBITION SYSTEM - ASSETS FOLDER
 =====================================
 
-This folder contains media files for the TX Baggage Exhibition System.
+This folder contains media files for the RFID Exhibition System.
 
 Supported Formats
 -----------------

@@ -1,4 +1,4 @@
-# TX Baggage Exhibition System
+# RFID Exhibition System
 
 A complete RFID-triggered multimedia exhibition system using Raspberry Pi Pico W.
 
@@ -18,7 +18,7 @@ A complete RFID-triggered multimedia exhibition system using Raspberry Pi Pico W
 
 ### 1. Setup Asset Server
 ```bash
-cd src/tx_baggage
+cd src/exhibition_system
 python3 asset_server.py
 ```
 
@@ -218,7 +218,7 @@ curl http://server-ip:8080/status
 
 ### File Structure
 ```
-tx_baggage/
+exhibition_system/
 ├── pico_expander_client.py      # PicoRFID client
 ├── asset_server.py          # HTTP server
 ├── web_player.html          # Playback interface

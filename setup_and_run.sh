@@ -1,14 +1,14 @@
 #!/bin/bash
-# TX Baggage Exhibition System - Raspberry Pi 5 Setup & Run Script
+# RFID Exhibition System - Raspberry Pi 5 Setup & Run Script
 
 # Configuration
 REPO_URL="https://github.com/MarcusCJH/Pico_Playground.git"
 TARGET_DIR="$HOME/Desktop/Pico_Playground"
-ASSET_DIR="$TARGET_DIR/src/tx_baggage"
+ASSET_DIR="$TARGET_DIR/src/exhibition_system"
 
 # Clear screen
 clear
-echo "Setting up TX Baggage Exhibition System on Raspberry Pi 5..."
+echo "Setting up RFID Exhibition System on Raspberry Pi 5..."
 echo ""
 
 # Clone or update repository

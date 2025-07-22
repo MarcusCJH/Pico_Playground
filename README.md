@@ -1,12 +1,10 @@
 
 ## Raspberry Pi Pico W Integration (Work in Progress) 🚧
 
-**WIP YO**
 
+# RFID Exhibition System for Raspberry Pi 5
 
-# Asset Server for Raspberry Pi 5
-
-A simple HTTP server for playing videos and images triggered by RFID cards.
+A simple HTTP server for playing videos and images triggered by RFID cards in exhibition settings.
 
 
 ## Setup Instructions for Raspberry Pi 5
@@ -40,14 +38,14 @@ The script will:
 
 - The server will run on port 8080
 - Access the web interface at: `http://[raspberry-pi-ip]:8080`
-- Place your video and image files in the `Desktop/Pico_Playground/src/tx_baggage/assets` directory
+- Place your video and image files in the `Desktop/Pico_Playground/src/exhibition_system/assets` directory
 - The server supports:
   - Videos: .mp4, .avi, .mov, .mkv, .wmv, .flv, .m4v, .webm
   - Images: .jpg, .jpeg, .png, .gif, .bmp, .webp, .svg
 
 ## Troubleshooting
 
-- View logs in `Desktop/Pico_Playground/src/tx_baggage/asset_server.log`
+- View logs in `Desktop/Pico_Playground/src/exhibition_system/asset_server.log`
 
 ## Controls
 

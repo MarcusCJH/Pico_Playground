@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>✈️ TX Baggage 🧳</title>
+    <title>🎨 RFID Exhibition System</title>
     <style>
         * {
             margin: 0;
@@ -178,7 +178,7 @@
             100% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
         }
 
-        .baggage-icon {
+        .status-icon {
             font-size: 1.2em;
             margin-right: 8px;
         }
@@ -450,7 +450,7 @@
 <body>
     <div id="assetContainer">
         <div id="welcomeScreen">
-            <h1>✈️ TX Baggage 🧳</h1>
+            <h1>🎨 RFID Exhibition System</h1>
             <p>🎯 Interactive Demo Showcase</p>
             <p class="pulse">📱 Scan RFID tag to trigger demo content...</p>
             <p style="font-size: 1.1em; color: #FFD700; margin-top: 40px;">
@@ -472,11 +472,11 @@
     </div>
 
 `    <div id="statusOverlay" class="hidden">
-        <div class="status-item"><span class="baggage-icon">🌐</span>Connection: <span id="connectionStatus" class="status-disconnected">Connecting...</span></div>
-        <div class="status-item"><span class="baggage-icon">📊</span>Assets Played: <span id="assetCount">0</span></div>
-        <div class="status-item"><span class="baggage-icon">🏷️</span>Last Tag: <span id="lastCard">None</span></div>
-        <div class="status-item"><span class="baggage-icon">🎬</span>Current Asset: <span id="currentAsset">None</span></div>
-        <div class="status-item"><span class="baggage-icon">⏰</span>Last Update: <span id="lastUpdate">Never</span></div>
+                    <div class="status-item"><span class="status-icon">🌐</span>Connection: <span id="connectionStatus" class="status-disconnected">Connecting...</span></div>
+            <div class="status-item"><span class="status-icon">📊</span>Assets Played: <span id="assetCount">0</span></div>
+            <div class="status-item"><span class="status-icon">🏷️</span>Last Tag: <span id="lastCard">None</span></div>
+            <div class="status-item"><span class="status-icon">🎬</span>Current Asset: <span id="currentAsset">None</span></div>
+            <div class="status-item"><span class="status-icon">⏰</span>Last Update: <span id="lastUpdate">Never</span></div>
     </div>
 
     <div id="controlToggle" onclick="toggleControls()">⚙️</div>
@@ -1153,7 +1153,7 @@
 
         // Initialize player when page loads
         window.addEventListener('load', async () => {
-            console.log('%c✈️ TX Baggage Player', 'color: #FFD700; font-size: 16px; font-weight: bold;');
+            console.log('%c🎨 RFID Exhibition Player', 'color: #FFD700; font-size: 16px; font-weight: bold;');
             console.log('%cCreated by Marcus Chan', 'color: #FFD700; font-size: 12px; font-style: italic;');
             console.log('%cPortfolio: https://marcuscjh.github.io', 'color: #FFD700; font-size: 11px;');
             console.log('---');
