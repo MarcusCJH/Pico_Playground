@@ -15,6 +15,7 @@ import socket
 import threading
 import queue
 import time
+import urllib.parse
 
 # Setup logging
 logging.basicConfig(
@@ -539,6 +540,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_json_response({"assets": assets, "count": len(assets)})
             elif self.path.startswith('/assets/'):
                 asset_filename = self.path[8:]  # Remove '/assets/'
+                # URL decode the filename to handle spaces and special characters
+                asset_filename = urllib.parse.unquote(asset_filename)
                 self.serve_asset_file(asset_filename)
             elif self.path == '/current-asset':
                 if self.asset_server.last_asset_info:
