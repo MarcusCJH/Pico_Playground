@@ -228,33 +228,7 @@
             background: rgba(255, 0, 0, 0.1);
         }
 
-        /* Quick toggle for mobile */
-        #quickNavToggle {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            padding: 8px 16px;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 12px;
-            z-index: 150;
-            transition: all 0.3s ease;
-            display: none;
-            backdrop-filter: blur(5px);
-        }
 
-        #quickNavToggle:hover {
-            background: rgba(0, 0, 0, 0.9);
-            border-color: rgba(255, 255, 255, 0.5);
-        }
-
-        #quickNavToggle.show {
-            display: block;
-        }
 
         /* Visual feedback for navigation areas */
         #navigationControls.visible #prevAsset::before {
@@ -398,11 +372,36 @@
 
         /* Mobile-friendly adjustments */
         @media (max-width: 768px) {
-            #quickNavToggle {
-                padding: 12px 20px;
-                font-size: 16px;
-                bottom: 30px;
-            }
+            /* Mobile-specific styles can go here */
+        }
+
+        /* Double-tap area for navigation */
+        #doubleTapArea {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 80px;
+            z-index: 100;
+            cursor: pointer;
+            background: transparent;
+        }
+
+        #doubleTapArea::before {
+            content: '';
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        #doubleTapArea.active::before {
+            opacity: 1;
         }
 
         /* RFID Card Simulation UI */
@@ -479,6 +478,7 @@
             <div class="status-item"><span class="status-icon">⏰</span>Last Update: <span id="lastUpdate">Never</span></div>
     </div>
 
+    <div id="doubleTapArea" onclick="handleDoubleTap()"></div>
     <div id="controlToggle" onclick="toggleControls()">⚙️</div>
 
     <div id="controls" class="hidden">
@@ -607,16 +607,8 @@
                 `;
                 document.body.appendChild(navContainer);
 
-                // Create quick toggle button for mobile
-                const quickToggle = document.createElement('div');
-                quickToggle.id = 'quickNavToggle';
-                quickToggle.innerHTML = '📱 Navigation (N)';
-                quickToggle.onclick = () => this.quickToggleNavigation();
-                document.body.appendChild(quickToggle);
-
                 this.prevButton = document.getElementById('prevAsset');
                 this.nextButton = document.getElementById('nextAsset');
-                this.quickToggle = quickToggle;
 
                 // Add navigation toggle to advanced controls
                 const advancedControls = document.getElementById('advancedControls');
@@ -995,10 +987,9 @@
                 this.currentAssetIndex = 0;
                 this.totalAssets = 1;
                 
-                // Hide navigation controls and quick toggle
+                // Hide navigation controls
                 const navControls = document.getElementById('navigationControls');
                 navControls.classList.remove('visible');
-                this.quickToggle.classList.remove('show');
                 this.updateNavigationButtons();
             }
 
@@ -1033,15 +1024,8 @@
                 const cardAssets = this.cardAssetFiles[this.currentCardId] || [];
                 if (enabled && this.currentCardId && cardAssets.length > 1) {
                     navControls.classList.add('visible');
-                    this.quickToggle.classList.remove('show');
                 } else {
                     navControls.classList.remove('visible');
-                    // Show quick toggle when navigation is available but not active
-                    if (this.currentCardId && cardAssets.length > 1) {
-                        this.quickToggle.classList.add('show');
-                    } else {
-                        this.quickToggle.classList.remove('show');
-                    }
                 }
                 this.updateNavigationButtons();
             }
@@ -1055,12 +1039,10 @@
                     // Hide navigation
                     navControls.classList.remove('visible');
                     navToggle.checked = false;
-                    this.quickToggle.classList.add('show');
                 } else {
                     // Show navigation
                     navControls.classList.add('visible');
                     navToggle.checked = true;
-                    this.quickToggle.classList.remove('show');
                 }
             }
         }
@@ -1069,6 +1051,38 @@
         function toggleControls() {
             const controls = document.getElementById('controls');
             controls.classList.toggle('hidden');
+        }
+
+        // Double-tap handling
+        let lastTapTime = 0;
+        const doubleTapDelay = 300; // milliseconds
+
+        function handleDoubleTap() {
+            const currentTime = new Date().getTime();
+            const timeDiff = currentTime - lastTapTime;
+            
+            if (timeDiff < doubleTapDelay && timeDiff > 0) {
+                // Double tap detected
+                const doubleTapArea = document.getElementById('doubleTapArea');
+                doubleTapArea.classList.add('active');
+                
+                // Toggle navigation if available
+                if (window.player && window.player.currentCardId) {
+                    const cardAssets = window.player.cardAssetFiles[window.player.currentCardId] || [];
+                    if (cardAssets.length > 1) {
+                        window.player.quickToggleNavigation();
+                    }
+                }
+                
+                // Remove active class after animation
+                setTimeout(() => {
+                    doubleTapArea.classList.remove('active');
+                }, 300);
+                
+                lastTapTime = 0; // Reset to prevent triple tap
+            } else {
+                lastTapTime = currentTime;
+            }
         }
 
         function toggleAdvanced() {
