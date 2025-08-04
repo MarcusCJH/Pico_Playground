@@ -462,7 +462,7 @@
             <img id="splashImage" alt="Splash Screen" style="width: 100vw; height: 100vh; object-fit: cover; display: block;">
         </div>
 
-        <video id="mainVideo" autoplay muted playsinline loop>
+        <video id="mainVideo" autoplay muted playsinline>
             Your browser does not support the video tag.
         </video>
 
@@ -568,7 +568,7 @@
                 
                 // Video event listeners
                 this.mainVideo.addEventListener('ended', () => {
-                    // Video will loop automatically due to loop attribute
+                    // Video will freeze on last frame when ended
                     // Only return to splash on card removal
                 });
                 this.mainVideo.addEventListener('error', (e) => {
