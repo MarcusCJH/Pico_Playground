@@ -445,8 +445,6 @@
             font-size: 10px;
         }
 
-
-
         /* Cache management styles */
         .cache-stats {
             display: grid;
@@ -490,11 +488,9 @@
 
         <img id="mainImage" alt="Demo Content">
 
-
-
     </div>
 
-`    <div id="statusOverlay" class="hidden">
+    <div id="statusOverlay" class="hidden">
                     <div class="status-item"><span class="status-icon">🌐</span>Connection: <span id="connectionStatus" class="status-disconnected">Connecting...</span></div>
             <div class="status-item"><span class="status-icon">📊</span>Assets Played: <span id="assetCount">0</span></div>
             <div class="status-item"><span class="status-icon">🏷️</span>Last Tag: <span id="lastCard">None</span></div>
@@ -531,27 +527,6 @@
                 <div class="rfid-card" onclick="simulateRfid('UNKNOWN-CARD-123')">
                     Unknown Card (Test)
                     <small>UNKNOWN-CARD-123</small>
-                </div>
-            </div>
-            <div style="margin: 15px 0; padding: 10px; background: rgba(0, 0, 0, 0.3); border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1);">
-                <h3 style="color: #4CAF50; font-size: 14px; margin-bottom: 10px;">🚀 Image Cache Management</h3>
-                <div class="cache-stats">
-                    <div class="cache-stat">
-                        📦 Cached: <span id="cacheSize" class="cache-stat-value">0</span>
-                    </div>
-                    <div class="cache-stat">
-                        ⏳ Status: <span id="preloadStatus" class="cache-stat-value">Idle</span>
-                    </div>
-                    <div class="cache-stat">
-                        📋 Queue: <span id="queueSize" class="cache-stat-value">0</span>
-                    </div>
-                    <div class="cache-stat">
-                        ⚡ Speed: <span id="cacheSpeed" class="cache-stat-value">Fast</span>
-                    </div>
-                </div>
-                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                    <button onclick="clearImageCache()" style="font-size: 12px; padding: 8px 12px;">🗑️ Clear Cache</button>
-                    <button onclick="preloadAllImages()" style="font-size: 12px; padding: 8px 12px;">⚡ Preload All</button>
                 </div>
             </div>
             <button onclick="testAsset('video')">🎬 Test Video</button>
@@ -1000,8 +975,6 @@
                     return;
                 }
                 
-                this.showNotification('🔄 Loading image...', 'info');
-                
                 const imageUrl = `http://${this.serverHost}:${this.serverPort}/assets/${imageFile}`;
                 
                 try {
@@ -1206,8 +1179,6 @@
 
             clearImageCache() {
                 this.imageCache.clear();
-                document.getElementById('cacheSize').textContent = '0';
-                this.showNotification('🗑️ Image cache cleared!', 'info');
                 console.log('🗑️ Image cache cleared');
             }
 
@@ -1231,8 +1202,6 @@
                 this.preloadLimit = 10; // Reset limit for this batch
                 this.isPreloading = true;
                 this.processPreloadQueue();
-                document.getElementById('preloadStatus').textContent = 'Preloading...';
-                document.getElementById('queueSize').textContent = this.preloadQueue.length;
             }
         }
         
@@ -1330,51 +1299,6 @@
             }
         }
         
-        // Image cache management functions
-        function clearImageCache() {
-            if (window.player) {
-                window.player.clearImageCache();
-                updateCacheStatus();
-            }
-        }
-        
-        function preloadAllImages() {
-            if (window.player) {
-                // Get all image files from all cards
-                const allImageFiles = [];
-                Object.values(window.player.cardAssetFiles).forEach(assetFiles => {
-                    if (Array.isArray(assetFiles)) {
-                        assetFiles.forEach(file => {
-                            if (file.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp|bmp)$/)) {
-                                allImageFiles.push(file);
-                            }
-                        });
-                    }
-                });
-                
-                // Add to preload queue
-                allImageFiles.forEach(file => {
-                    window.player.preloadQueue.push({ cardId: 'all', file });
-                });
-                
-                window.player.processPreloadQueue();
-                updateCacheStatus();
-                window.player.showNotification(`⚡ Preloading ${allImageFiles.length} images...`, 'info');
-            }
-        }
-        
-        function updateCacheStatus() {
-            if (window.player) {
-                document.getElementById('cacheSize').textContent = window.player.getImageCacheSize();
-                document.getElementById('preloadStatus').textContent = window.player.isPreloading ? 'Preloading...' : 'Idle';
-                document.getElementById('queueSize').textContent = window.player.preloadQueue.length;
-                document.getElementById('cacheSpeed').textContent = window.player.getAverageLoadingSpeed();
-            }
-        }
-        
-        // Update cache status periodically
-        setInterval(updateCacheStatus, 1000);
-        
         // Load card mappings from server
         async function loadCardMappings() {
             try {
@@ -1468,13 +1392,6 @@
             }
             if (e.key.toLowerCase() === 'n' && window.player) {
                 window.player.quickToggleNavigation();
-            }
-            // Cache management shortcuts
-            if (e.key.toLowerCase() === 'p' && window.player) {
-                preloadAllImages();
-            }
-            if (e.key.toLowerCase() === 'x' && window.player) {
-                clearImageCache();
             }
         });
 
