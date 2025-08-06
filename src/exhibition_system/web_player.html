@@ -444,6 +444,29 @@
             opacity: 0.8;
             font-size: 10px;
         }
+
+
+
+        /* Cache management styles */
+        .cache-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .cache-stat {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 5px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            text-align: center;
+        }
+
+        .cache-stat-value {
+            font-weight: bold;
+            color: #4CAF50;
+        }
     </style>
 </head>
 <body>
@@ -466,6 +489,7 @@
         </video>
 
         <img id="mainImage" alt="Demo Content">
+
 
 
     </div>
@@ -509,6 +533,27 @@
                     <small>UNKNOWN-CARD-123</small>
                 </div>
             </div>
+            <div style="margin: 15px 0; padding: 10px; background: rgba(0, 0, 0, 0.3); border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1);">
+                <h3 style="color: #4CAF50; font-size: 14px; margin-bottom: 10px;">🚀 Image Cache Management</h3>
+                <div class="cache-stats">
+                    <div class="cache-stat">
+                        📦 Cached: <span id="cacheSize" class="cache-stat-value">0</span>
+                    </div>
+                    <div class="cache-stat">
+                        ⏳ Status: <span id="preloadStatus" class="cache-stat-value">Idle</span>
+                    </div>
+                    <div class="cache-stat">
+                        📋 Queue: <span id="queueSize" class="cache-stat-value">0</span>
+                    </div>
+                    <div class="cache-stat">
+                        ⚡ Speed: <span id="cacheSpeed" class="cache-stat-value">Fast</span>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button onclick="clearImageCache()" style="font-size: 12px; padding: 8px 12px;">🗑️ Clear Cache</button>
+                    <button onclick="preloadAllImages()" style="font-size: 12px; padding: 8px 12px;">⚡ Preload All</button>
+                </div>
+            </div>
             <button onclick="testAsset('video')">🎬 Test Video</button>
             <button onclick="testAsset('image')">🖼️ Test Image</button>
         </div>
@@ -529,6 +574,13 @@
                 this.currentAssetIndex = 0;
                 this.totalAssets = 1;
                 this.cardAssetFiles = {};  // Store asset files for each card
+                
+                // Image preloading and caching
+                this.imageCache = new Map();  // Cache loaded images
+                this.preloadQueue = [];  // Queue for preloading images
+                this.isPreloading = false;
+                this.preloadLimit = 10;  // Maximum images to preload at once
+                this.loadingTimes = [];  // Track loading times for speed calculation
                 
                 // SSE for real-time updates
                 this.eventSource = null;
@@ -794,6 +846,9 @@
                 if (assetInfo.card_id && assetInfo.asset_files) {
                     this.cardAssetFiles = this.cardAssetFiles || {};
                     this.cardAssetFiles[assetInfo.card_id] = assetInfo.asset_files;
+                    
+                    // Preload images for this card
+                    this.preloadCardImages(assetInfo.card_id, assetInfo.asset_files);
                 }
 
                 this.playAsset(
@@ -936,23 +991,47 @@
                 this.mainVideo.load();
                 
                 this.mainImage.style.display = 'none';
-                this.mainImage.src = '';
+                
+                // Check if image is already cached
+                if (this.imageCache.has(imageFile)) {
+                    const cachedImg = this.imageCache.get(imageFile);
+                    this.mainImage.src = cachedImg.src;
+                    this.mainImage.style.display = 'block';
+                    return;
+                }
+                
+                this.showNotification('🔄 Loading image...', 'info');
                 
                 const imageUrl = `http://${this.serverHost}:${this.serverPort}/assets/${imageFile}`;
                 
                 try {
-                    const response = await fetch(imageUrl, { method: 'GET' });
-                    if (!response.ok) {
-                        throw new Error(`Image not found: ${response.status} ${response.statusText}`);
-                    }
+                    // Try to preload the image first
+                    await this.preloadImage(imageFile);
+                    
+                    // Use the cached version
+                    const cachedImg = this.imageCache.get(imageFile);
+                    this.mainImage.src = cachedImg.src;
+                    this.mainImage.style.display = 'block';
+                    
                 } catch (error) {
-                    this.showNotification(`Image not accessible: ${error.message}`, 'error');
-                    setTimeout(() => this.showWelcomeScreen(), 2000);
-                    return;
+                    // Fallback to direct loading if preloading fails
+                    console.warn(`Preloading failed for ${imageFile}, trying direct load:`, error);
+                    
+                    try {
+                        const response = await fetch(imageUrl, { method: 'GET' });
+                        if (!response.ok) {
+                            throw new Error(`Image not found: ${response.status} ${response.statusText}`);
+                        }
+                        
+                        this.mainImage.src = imageUrl;
+                        this.mainImage.style.display = 'block';
+                        
+                    } catch (fetchError) {
+                        this.showNotification(`Image not accessible: ${fetchError.message}`, 'error');
+                        setTimeout(() => this.showWelcomeScreen(), 2000);
+                        return;
+                    }
                 }
-                
-                this.mainImage.src = imageUrl;
-                this.mainImage.style.display = 'block';
             }
             
             showWelcomeScreen() {
@@ -1044,6 +1123,116 @@
                     navControls.classList.add('visible');
                     navToggle.checked = true;
                 }
+            }
+
+            // Image preloading and caching methods
+            async preloadImage(imageFile) {
+                if (this.imageCache.has(imageFile)) {
+                    return this.imageCache.get(imageFile);
+                }
+
+                const startTime = performance.now();
+
+                return new Promise((resolve, reject) => {
+                    const img = new Image();
+                    const imageUrl = `http://${this.serverHost}:${this.serverPort}/assets/${imageFile}`;
+                    
+                    img.onload = () => {
+                        const loadTime = performance.now() - startTime;
+                        this.loadingTimes.push(loadTime);
+                        
+                        // Keep only last 10 loading times for average calculation
+                        if (this.loadingTimes.length > 10) {
+                            this.loadingTimes.shift();
+                        }
+                        
+                        this.imageCache.set(imageFile, img);
+                        resolve(img);
+                    };
+                    
+                    img.onerror = () => {
+                        reject(new Error(`Failed to preload image: ${imageFile}`));
+                    };
+                    
+                    img.src = imageUrl;
+                });
+            }
+
+            async preloadCardImages(cardId, assetFiles) {
+                if (!assetFiles || !Array.isArray(assetFiles)) return;
+                
+                const imageFiles = assetFiles.filter(file => 
+                    file.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp|bmp)$/)
+                );
+                
+                if (imageFiles.length === 0) return;
+                
+                // Add to preload queue
+                this.preloadQueue.push(...imageFiles.map(file => ({ cardId, file })));
+                
+                // Start preloading if not already running
+                if (!this.isPreloading) {
+                    this.processPreloadQueue();
+                }
+            }
+
+            async processPreloadQueue() {
+                if (this.isPreloading || this.preloadQueue.length === 0) return;
+                
+                this.isPreloading = true;
+                
+                while (this.preloadQueue.length > 0) {
+                    const batch = this.preloadQueue.splice(0, this.preloadLimit);
+                    
+                    const preloadPromises = batch.map(async ({ cardId, file }) => {
+                        try {
+                            await this.preloadImage(file);
+                            console.log(`✅ Preloaded image: ${file} for card ${cardId}`);
+                        } catch (error) {
+                            console.warn(`⚠️ Failed to preload image: ${file}`, error);
+                        }
+                    });
+                    
+                    await Promise.allSettled(preloadPromises);
+                    
+                    // Small delay between batches to avoid overwhelming the server
+                    if (this.preloadQueue.length > 0) {
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                }
+                
+                this.isPreloading = false;
+            }
+
+            clearImageCache() {
+                this.imageCache.clear();
+                document.getElementById('cacheSize').textContent = '0';
+                this.showNotification('🗑️ Image cache cleared!', 'info');
+                console.log('🗑️ Image cache cleared');
+            }
+
+            getImageCacheSize() {
+                return this.imageCache.size;
+            }
+
+            getAverageLoadingSpeed() {
+                if (this.loadingTimes.length === 0) return 'Fast';
+                
+                const averageTime = this.loadingTimes.reduce((a, b) => a + b, 0) / this.loadingTimes.length;
+                
+                if (averageTime < 500) return 'Fast';
+                if (averageTime < 1000) return 'Medium';
+                if (averageTime < 2000) return 'Slow';
+                return 'Very Slow';
+            }
+
+            preloadAllImages() {
+                this.preloadQueue = []; // Clear current queue
+                this.preloadLimit = 10; // Reset limit for this batch
+                this.isPreloading = true;
+                this.processPreloadQueue();
+                document.getElementById('preloadStatus').textContent = 'Preloading...';
+                document.getElementById('queueSize').textContent = this.preloadQueue.length;
             }
         }
         
@@ -1141,6 +1330,51 @@
             }
         }
         
+        // Image cache management functions
+        function clearImageCache() {
+            if (window.player) {
+                window.player.clearImageCache();
+                updateCacheStatus();
+            }
+        }
+        
+        function preloadAllImages() {
+            if (window.player) {
+                // Get all image files from all cards
+                const allImageFiles = [];
+                Object.values(window.player.cardAssetFiles).forEach(assetFiles => {
+                    if (Array.isArray(assetFiles)) {
+                        assetFiles.forEach(file => {
+                            if (file.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp|bmp)$/)) {
+                                allImageFiles.push(file);
+                            }
+                        });
+                    }
+                });
+                
+                // Add to preload queue
+                allImageFiles.forEach(file => {
+                    window.player.preloadQueue.push({ cardId: 'all', file });
+                });
+                
+                window.player.processPreloadQueue();
+                updateCacheStatus();
+                window.player.showNotification(`⚡ Preloading ${allImageFiles.length} images...`, 'info');
+            }
+        }
+        
+        function updateCacheStatus() {
+            if (window.player) {
+                document.getElementById('cacheSize').textContent = window.player.getImageCacheSize();
+                document.getElementById('preloadStatus').textContent = window.player.isPreloading ? 'Preloading...' : 'Idle';
+                document.getElementById('queueSize').textContent = window.player.preloadQueue.length;
+                document.getElementById('cacheSpeed').textContent = window.player.getAverageLoadingSpeed();
+            }
+        }
+        
+        // Update cache status periodically
+        setInterval(updateCacheStatus, 1000);
+        
         // Load card mappings from server
         async function loadCardMappings() {
             try {
@@ -1173,6 +1407,31 @@
             console.log('---');
             await loadCardMappings();
             window.player = new ExhibitionAssetPlayer();
+            
+            // Preload common images after a short delay
+            setTimeout(() => {
+                if (window.player) {
+                    // Preload splash image if it exists
+                    if (window.player.splashImageExists) {
+                        window.player.preloadImage('splash.png').catch(() => {
+                            window.player.preloadImage('splash.jpg').catch(() => {
+                                window.player.preloadImage('splash.jpeg').catch(() => {});
+                            });
+                        });
+                    }
+                    
+                    // Preload images from known card mappings
+                    Object.values(RFID_CARD_MAPPING).forEach(assetFiles => {
+                        if (Array.isArray(assetFiles)) {
+                            assetFiles.forEach(file => {
+                                if (file.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp|bmp)$/)) {
+                                    window.player.preloadImage(file).catch(() => {});
+                                }
+                            });
+                        }
+                    });
+                }
+            }, 2000);
         });
         
         // Handle page visibility changes
@@ -1209,6 +1468,13 @@
             }
             if (e.key.toLowerCase() === 'n' && window.player) {
                 window.player.quickToggleNavigation();
+            }
+            // Cache management shortcuts
+            if (e.key.toLowerCase() === 'p' && window.player) {
+                preloadAllImages();
+            }
+            if (e.key.toLowerCase() === 'x' && window.player) {
+                clearImageCache();
             }
         });
 
