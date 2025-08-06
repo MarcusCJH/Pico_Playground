@@ -47,34 +47,11 @@
 
         /* Transition states - Instant transitions */
         .asset-fade-in {
-            /* No animation for instant transitions */
             opacity: 1;
         }
 
         .asset-fade-out {
-            /* No animation for instant transitions */
             opacity: 0;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-
-        @keyframes fadeOut {
-            from { opacity: 1; }
-            to { opacity: 0; }
-        }
-
-        /* Video visibility detection */
-        .video-hidden {
-            opacity: 0;
-            pointer-events: none;
-        }
-
-        .video-visible {
-            opacity: 1;
-            pointer-events: auto;
         }
 
         #statusOverlay {
@@ -224,7 +201,7 @@
         /* Navigation Controls - Full Screen Overlay */
         #navigationControls {
             position: fixed;
-            top: 0;
+            top: 60px;
             left: 0;
             right: 0;
             bottom: 0;
@@ -596,8 +573,6 @@
                 this.imageCache = new Map();  // Cache loaded images
                 this.preloadQueue = [];  // Queue for preloading images
                 this.isPreloading = false;
-                this.preloadLimit = 10;  // Maximum images to preload at once
-                this.loadingTimes = [];  // Track loading times for speed calculation
                 
                 // SSE for real-time updates
                 this.eventSource = null;
@@ -665,7 +640,6 @@
                         if (response.ok) {
                             this.splashImageExists = true;
                             this.splashImage.src = `http://${this.serverHost}:${this.serverPort}/assets/${imageName}`;
-                            console.log(`Splash image found: ${imageName}`);
                             break;
                         }
                     } catch (error) {
@@ -674,7 +648,7 @@
                 }
                 
                 if (!this.splashImageExists) {
-                    console.log('No splash image found, using welcome screen');
+                    // No splash image found, using welcome screen
                 }
             }
 
@@ -711,14 +685,6 @@
                 const cardAssets = this.cardAssetFiles[this.currentCardId] || [];
                 const canNavigate = this.currentCardId && cardAssets.length > 1;
                 
-                console.log(`🧭 Navigation update:`, {
-                    cardId: this.currentCardId,
-                    assetCount: cardAssets.length,
-                    canNavigate: canNavigate,
-                    currentIndex: this.currentAssetIndex,
-                    totalAssets: this.totalAssets
-                });
-                
                 this.prevButton.disabled = !canNavigate;
                 this.nextButton.disabled = !canNavigate;
                 
@@ -727,20 +693,6 @@
                 if (navToggle && navToggle.checked && canNavigate) {
                     const navControls = document.getElementById('navigationControls');
                     navControls.classList.add('visible');
-                }
-            }
-
-            forceRefreshNavigation() {
-                // Force refresh navigation state to ensure consistency
-                console.log(`🧭 Force refreshing navigation state`);
-                
-                // Re-update navigation buttons
-                this.updateNavigationButtons();
-                
-                // Re-check navigation toggle state
-                const navToggle = document.getElementById('navigationToggle');
-                if (navToggle) {
-                    this.toggleNavigation(navToggle.checked);
                 }
             }
 
@@ -939,11 +891,6 @@
                         assetInfo.total_assets || 1
                     );
                 }
-                
-                // Force refresh navigation after a short delay to ensure consistency
-                setTimeout(() => {
-                    this.forceRefreshNavigation();
-                }, 100);
             }
 
             updateSSEStatus(connected) {
@@ -1079,7 +1026,6 @@
                     video.preload = 'metadata';
                     
                     video.addEventListener('loadedmetadata', () => {
-                        console.log(`🎬 Video preloaded: ${videoFile}`);
                         resolve(video);
                     }, { once: true });
                     
@@ -1093,7 +1039,6 @@
             }
 
             async handleMixedTransition(fromType, toType, assetFile) {
-                console.log(`🔄 Mixed transition: ${fromType} → ${toType} (${assetFile})`);
                 
                 // Handle transitions between different asset types (image <-> video)
                 if (fromType === 'video' && toType === 'image') {
@@ -1139,7 +1084,6 @@
             }
 
             async playVideoInstant(videoFile) {
-                console.log(`🎬 Playing video with instant transition: ${videoFile}`);
                 
                 // Hide all image elements immediately
                 this.mainImage.style.display = 'none';
@@ -1153,8 +1097,6 @@
                 
                 const nextVideo = this[nextVideoElement];
                 const currentVideo = this[currentVideoElement];
-                
-                console.log(`🎬 Using ${nextVideoElement} for new video, ${currentVideoElement} for current`);
                 
                 const videoUrl = `http://${this.serverHost}:${this.serverPort}/assets/${videoFile}`;
                 
@@ -1171,11 +1113,9 @@
                     const playPromise = nextVideo.play();
                     if (playPromise !== undefined) {
                         playPromise.catch(e => {
-                            console.log(`🎬 Auto-play prevented, will play when ready: ${e.message}`);
                         });
                     }
                 } catch (e) {
-                    console.log(`🎬 Play attempt failed, will retry: ${e.message}`);
                 }
                 
                 // Update current element reference
@@ -1191,21 +1131,20 @@
                 
                 // Load in background for better performance
                 nextVideo.addEventListener('canplay', () => {
-                    console.log(`🎬 Video loaded and ready: ${videoFile}`);
                     // Try to play again if it wasn't playing
                     if (nextVideo.paused) {
-                        nextVideo.play().catch(e => console.log('Play failed after load'));
+                        nextVideo.play().catch(e => {
+                            // Play failed after load
+                        });
                     }
                 }, { once: true });
                 
                 nextVideo.addEventListener('error', (e) => {
-                    console.error(`🎬 Video error: ${e.message}`);
                     this.showNotification(`Video failed to load: ${videoFile}`, 'error');
                 }, { once: true });
             }
 
             async playImageInstant(imageFile) {
-                console.log(`🖼️ Playing image with instant transition: ${imageFile}`);
                 
                 // Hide all video elements immediately
                 this.mainVideo.style.display = 'none';
@@ -1224,10 +1163,6 @@
                 const nextImage = this[nextImageElement];
                 const currentImage = this[currentImageElement];
                 
-                console.log(`🖼️ Using ${nextImageElement} for new image, ${currentImageElement} for current`);
-                
-                const imageUrl = `http://${this.serverHost}:${this.serverPort}/assets/${imageFile}`;
-                
                 // TRULY INSTANT TRANSITION: Show new image while old one is still visible
                 // Check if image is already cached for instant display
                 if (this.imageCache.has(imageFile)) {
@@ -1236,8 +1171,6 @@
                     // Show new image immediately (overlapping with current)
                     nextImage.src = cachedImg.src;
                     nextImage.style.display = 'block';
-                    
-                    console.log(`🖼️ Instant display from cache: ${imageFile}`);
                     
                     // Update current element reference
                     this.currentImageElement = nextImageElement;
@@ -1252,10 +1185,9 @@
                 }
                 
                 // Show image immediately with direct URL (overlapping with current)
+                const imageUrl = `http://${this.serverHost}:${this.serverPort}/assets/${imageFile}`;
                 nextImage.src = imageUrl;
                 nextImage.style.display = 'block';
-                
-                console.log(`🖼️ Instant display with direct load: ${imageFile}`);
                 
                 // Update current element reference
                 this.currentImageElement = nextImageElement;
@@ -1268,7 +1200,6 @@
                 
                 // Preload in background for future use
                 this.preloadImage(imageFile).then(() => {
-                    console.log(`🖼️ Image preloaded for future use: ${imageFile}`);
                 }).catch(() => {
                     // Silently fail preloading
                 });
@@ -1355,19 +1286,10 @@
                 const cardAssets = this.cardAssetFiles[this.currentCardId] || [];
                 const canNavigate = this.currentCardId && cardAssets.length > 1;
                 
-                console.log(`🧭 Toggle navigation:`, {
-                    enabled: enabled,
-                    canNavigate: canNavigate,
-                    cardId: this.currentCardId,
-                    assetCount: cardAssets.length
-                });
-                
                 if (enabled && canNavigate) {
                     navControls.classList.add('visible');
-                    console.log(`🧭 Navigation controls shown`);
                 } else {
                     navControls.classList.remove('visible');
-                    console.log(`🧭 Navigation controls hidden`);
                 }
                 
                 this.updateNavigationButtons();
@@ -1395,21 +1317,11 @@
                     return this.imageCache.get(imageFile);
                 }
 
-                const startTime = performance.now();
-
                 return new Promise((resolve, reject) => {
                     const img = new Image();
                     const imageUrl = `http://${this.serverHost}:${this.serverPort}/assets/${imageFile}`;
                     
                     img.onload = () => {
-                        const loadTime = performance.now() - startTime;
-                        this.loadingTimes.push(loadTime);
-                        
-                        // Keep only last 10 loading times for average calculation
-                        if (this.loadingTimes.length > 10) {
-                            this.loadingTimes.shift();
-                        }
-                        
                         this.imageCache.set(imageFile, img);
                         resolve(img);
                     };
@@ -1446,14 +1358,12 @@
                 this.isPreloading = true;
                 
                 while (this.preloadQueue.length > 0) {
-                    const batch = this.preloadQueue.splice(0, this.preloadLimit);
+                    const batch = this.preloadQueue.splice(0, 10); // Changed from preloadLimit to 10
                     
                     const preloadPromises = batch.map(async ({ cardId, file }) => {
                         try {
                             await this.preloadImage(file);
-                            console.log(`✅ Preloaded image: ${file} for card ${cardId}`);
                         } catch (error) {
-                            console.warn(`⚠️ Failed to preload image: ${file}`, error);
                         }
                     });
                     
@@ -1470,29 +1380,6 @@
 
             clearImageCache() {
                 this.imageCache.clear();
-                console.log('🗑️ Image cache cleared');
-            }
-
-            getImageCacheSize() {
-                return this.imageCache.size;
-            }
-
-            getAverageLoadingSpeed() {
-                if (this.loadingTimes.length === 0) return 'Fast';
-                
-                const averageTime = this.loadingTimes.reduce((a, b) => a + b, 0) / this.loadingTimes.length;
-                
-                if (averageTime < 500) return 'Fast';
-                if (averageTime < 1000) return 'Medium';
-                if (averageTime < 2000) return 'Slow';
-                return 'Very Slow';
-            }
-
-            preloadAllImages() {
-                this.preloadQueue = []; // Clear current queue
-                this.preloadLimit = 10; // Reset limit for this batch
-                this.isPreloading = true;
-                this.processPreloadQueue();
             }
 
             initVisibilityDetection() {
@@ -1502,7 +1389,9 @@
                         if (entry.isIntersecting && entry.target.tagName === 'VIDEO') {
                             // Video is visible, ensure it's playing
                             if (entry.target.paused) {
-                                entry.target.play().catch(e => console.log('Auto-play prevented'));
+                                entry.target.play().catch(e => {
+                                    // Auto-play prevented
+                                });
                             }
                         } else if (!entry.isIntersecting && entry.target.tagName === 'VIDEO') {
                             // Video is not visible, pause it to save resources
@@ -1662,10 +1551,6 @@
 
         // Initialize player when page loads
         window.addEventListener('load', async () => {
-            console.log('%c🎨 RFID Exhibition Player', 'color: #FFD700; font-size: 16px; font-weight: bold;');
-            console.log('%cCreated by Marcus Chan', 'color: #FFD700; font-size: 12px; font-style: italic;');
-            console.log('%cPortfolio: https://marcuscjh.github.io', 'color: #FFD700; font-size: 11px;');
-            console.log('---');
             await loadCardMappings();
             window.player = new ExhibitionAssetPlayer();
             
@@ -1736,10 +1621,6 @@
             }
             if (e.key.toLowerCase() === 'n' && window.player) {
                 window.player.quickToggleNavigation();
-            }
-            // Force refresh navigation (debug)
-            if (e.key.toLowerCase() === 'r' && window.player) {
-                window.player.forceRefreshNavigation();
             }
         });
 
