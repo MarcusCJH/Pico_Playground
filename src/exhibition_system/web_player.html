@@ -30,7 +30,7 @@
             align-items: center;
         }
 
-        #mainVideo, #mainImage {
+        #mainVideo, #mainVideo2, #mainImage, #mainImage2 {
             max-width: 100%;
             max-height: 100%;
             width: auto;
@@ -39,6 +39,42 @@
             border-radius: 10px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
             display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        /* Transition states - Instant transitions */
+        .asset-fade-in {
+            /* No animation for instant transitions */
+            opacity: 1;
+        }
+
+        .asset-fade-out {
+            /* No animation for instant transitions */
+            opacity: 0;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+
+        /* Video visibility detection */
+        .video-hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .video-visible {
+            opacity: 1;
+            pointer-events: auto;
         }
 
         #statusOverlay {
@@ -165,7 +201,7 @@
             padding: 25px 50px;
             border-radius: 15px;
             font-size: 1.8em;
-            z-index: 200;
+            z-index: 300;
             animation: fadeInOut 4s ease-in-out;
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
             text-align: center;
@@ -188,12 +224,12 @@
         /* Navigation Controls - Full Screen Overlay */
         #navigationControls {
             position: fixed;
-            top: 60px; /* Below the settings icon */
+            top: 0;
             left: 0;
             right: 0;
             bottom: 0;
             display: flex;
-            z-index: 150;
+            z-index: 250;
             pointer-events: none;
             opacity: 0;
             visibility: hidden;
@@ -486,7 +522,13 @@
             Your browser does not support the video tag.
         </video>
 
+        <video id="mainVideo2" autoplay muted playsinline>
+            Your browser does not support the video tag.
+        </video>
+
         <img id="mainImage" alt="Demo Content">
+
+        <img id="mainImage2" alt="Demo Content">
 
     </div>
 
@@ -572,9 +614,17 @@
                 // UI visibility controls
                 this.showNotifications = false;  // Hide notifications by default
                 
+                // Dual-element transition system
+                this.currentVideoElement = 'mainVideo';
+                this.currentImageElement = 'mainImage';
+                this.isTransitioning = false;
+                this.visibilityObserver = null;
+                this.currentAssetType = null;  // Track current asset type for mixed transitions
+                
                 this.initElements();
                 this.checkSplashImage();
                 this.initSSE();
+                this.initVisibilityDetection();
             }
             
             initElements() {
@@ -582,7 +632,9 @@
                 this.splashScreen = document.getElementById('splashScreen');
                 this.splashImage = document.getElementById('splashImage');
                 this.mainVideo = document.getElementById('mainVideo');
+                this.mainVideo2 = document.getElementById('mainVideo2');
                 this.mainImage = document.getElementById('mainImage');
+                this.mainImage2 = document.getElementById('mainImage2');
                 this.statusOverlay = document.getElementById('statusOverlay');
                 this.connectionStatus = document.getElementById('connectionStatus');
                 this.serverStatus = document.getElementById('serverStatus');
@@ -593,14 +645,16 @@
                 
                 this.initNavigationControls();
                 
-                // Video event listeners
-                this.mainVideo.addEventListener('ended', () => {
-                    // Video will freeze on last frame when ended
-                    // Only return to splash on card removal
-                });
-                this.mainVideo.addEventListener('error', (e) => {
-                    this.showNotification('Video Error', 'error');
-                    this.showWelcomeScreen();
+                // Video event listeners for both elements
+                [this.mainVideo, this.mainVideo2].forEach(video => {
+                    video.addEventListener('ended', () => {
+                        // Video will freeze on last frame when ended
+                        // Only return to splash on card removal
+                    });
+                    video.addEventListener('error', (e) => {
+                        this.showNotification('Video Error', 'error');
+                        this.showWelcomeScreen();
+                    });
                 });
             }
 
@@ -656,8 +710,38 @@
             updateNavigationButtons() {
                 const cardAssets = this.cardAssetFiles[this.currentCardId] || [];
                 const canNavigate = this.currentCardId && cardAssets.length > 1;
+                
+                console.log(`🧭 Navigation update:`, {
+                    cardId: this.currentCardId,
+                    assetCount: cardAssets.length,
+                    canNavigate: canNavigate,
+                    currentIndex: this.currentAssetIndex,
+                    totalAssets: this.totalAssets
+                });
+                
                 this.prevButton.disabled = !canNavigate;
                 this.nextButton.disabled = !canNavigate;
+                
+                // Update navigation visibility if toggle is enabled
+                const navToggle = document.getElementById('navigationToggle');
+                if (navToggle && navToggle.checked && canNavigate) {
+                    const navControls = document.getElementById('navigationControls');
+                    navControls.classList.add('visible');
+                }
+            }
+
+            forceRefreshNavigation() {
+                // Force refresh navigation state to ensure consistency
+                console.log(`🧭 Force refreshing navigation state`);
+                
+                // Re-update navigation buttons
+                this.updateNavigationButtons();
+                
+                // Re-check navigation toggle state
+                const navToggle = document.getElementById('navigationToggle');
+                if (navToggle) {
+                    this.toggleNavigation(navToggle.checked);
+                }
             }
 
             updateRfidSimulator() {
@@ -826,13 +910,40 @@
                     this.preloadCardImages(assetInfo.card_id, assetInfo.asset_files);
                 }
 
-                this.playAsset(
-                    assetInfo.asset_file, 
-                    assetInfo.asset_type, 
-                    assetInfo.card_id,
-                    assetInfo.asset_index || 0,
-                    assetInfo.total_assets || 1
-                );
+                // Update navigation state immediately
+                this.currentCardId = assetInfo.card_id;
+                this.currentAssetIndex = assetInfo.asset_index || 0;
+                this.totalAssets = assetInfo.total_assets || 1;
+                this.currentAsset = assetInfo.asset_file;
+                
+                // Update status display
+                this.lastCardEl.textContent = assetInfo.card_id || 'Unknown';
+                this.currentAssetEl.textContent = `${assetInfo.asset_file} (${(assetInfo.asset_index || 0) + 1}/${assetInfo.total_assets || 1})`;
+
+                // Track previous asset type for mixed transitions
+                const previousAssetType = this.currentAssetType;
+                this.currentAssetType = assetInfo.asset_type;
+
+                // Update navigation buttons immediately
+                this.updateNavigationButtons();
+
+                // Use mixed transition handler for smoother transitions
+                if (previousAssetType && previousAssetType !== assetInfo.asset_type) {
+                    this.handleMixedTransition(previousAssetType, assetInfo.asset_type, assetInfo.asset_file);
+                } else {
+                    this.playAsset(
+                        assetInfo.asset_file, 
+                        assetInfo.asset_type, 
+                        assetInfo.card_id,
+                        assetInfo.asset_index || 0,
+                        assetInfo.total_assets || 1
+                    );
+                }
+                
+                // Force refresh navigation after a short delay to ensure consistency
+                setTimeout(() => {
+                    this.forceRefreshNavigation();
+                }, 100);
             }
 
             updateSSEStatus(connected) {
@@ -863,15 +974,24 @@
                 // Mark that we're no longer on first visit
                 this.isFirstVisit = false;
                 
-                // Update navigation state
-                this.currentCardId = cardId;
-                this.currentAssetIndex = assetIndex;
-                this.totalAssets = totalAssets;
+                // Note: Navigation state is now updated in handleAssetUpdate
+                // Only update if not already set by handleAssetUpdate
+                if (!this.currentCardId) {
+                    this.currentCardId = cardId;
+                    this.currentAssetIndex = assetIndex;
+                    this.totalAssets = totalAssets;
+                }
 
                 this.lastCard = cardId;
                 this.currentAsset = assetFile;
-                this.lastCardEl.textContent = cardId;
-                this.currentAssetEl.textContent = `${assetFile} (${assetIndex + 1}/${totalAssets})`;
+                
+                // Only update display if not already updated by handleAssetUpdate
+                if (!this.lastCardEl.textContent || this.lastCardEl.textContent === 'None') {
+                    this.lastCardEl.textContent = cardId;
+                }
+                if (!this.currentAssetEl.textContent || this.currentAssetEl.textContent === 'None') {
+                    this.currentAssetEl.textContent = `${assetFile} (${assetIndex + 1}/${totalAssets})`;
+                }
                 
                 const emoji = assetType === 'video' ? '🎬' : '🖼️';
                 this.showNotification(`${emoji} ${assetType}: ${assetFile} (${assetIndex + 1}/${totalAssets})`, 'info');
@@ -882,7 +1002,7 @@
                     this.toggleNavigation(true);
                 }
                 
-                this.updateNavigationButtons();
+                // Navigation buttons already updated in handleAssetUpdate
                 
                 // Highlight active RFID card
                 document.querySelectorAll('.rfid-card').forEach(card => {
@@ -896,126 +1016,285 @@
                 this.welcomeScreen.style.display = 'none';
                 this.splashScreen.style.display = 'none';
                 
+                // Preload next asset in sequence for smoother transitions
+                this.preloadNextAsset(cardId, assetIndex, totalAssets);
+                
+                // Handle instant transition based on asset type
                 if (assetType === 'video') {
-                    await this.playVideo(assetFile);
+                    await this.playVideoInstant(assetFile);
                 } else if (assetType === 'image') {
-                    await this.playImage(assetFile);
+                    await this.playImageInstant(assetFile);
                 } else {
                     this.showWelcomeScreen();
                 }
             }
 
-            async playVideo(videoFile) {
-                this.mainImage.style.display = 'none';
-                this.mainImage.src = '';
+            preloadNextAsset(cardId, currentIndex, totalAssets) {
+                // Preload the next asset in the sequence for instant transitions
+                if (!cardId || totalAssets <= 1) return;
                 
-                this.mainVideo.style.display = 'none';
-                this.mainVideo.src = '';
-                try {
-                    this.mainVideo.pause();
-                } catch (e) {}
+                const nextIndex = (currentIndex + 1) % totalAssets;
+                const cardAssets = this.cardAssetFiles[cardId];
                 
-                const videoUrl = `http://${this.serverHost}:${this.serverPort}/assets/${videoFile}`;
-                
-                this.mainVideo.load();
-                this.mainVideo.src = videoUrl;
-                this.mainVideo.style.display = 'block';
-                
-                try {
-                    await new Promise((resolve, reject) => {
-                        const onCanPlay = () => {
-                            this.mainVideo.removeEventListener('canplay', onCanPlay);
-                            this.mainVideo.removeEventListener('error', onError);
-                            resolve();
-                        };
-                        
-                        const onError = (e) => {
-                            this.mainVideo.removeEventListener('canplay', onCanPlay);
-                            this.mainVideo.removeEventListener('error', onError);
-                            reject(new Error(`Video failed to load: ${videoFile}`));
-                        };
-                        
-                        this.mainVideo.addEventListener('canplay', onCanPlay);
-                        this.mainVideo.addEventListener('error', onError);
-                        
-                        this.mainVideo.load();
-                        
-                        setTimeout(() => {
-                            this.mainVideo.removeEventListener('canplay', onCanPlay);
-                            this.mainVideo.removeEventListener('error', onError);
-                            reject(new Error('Video load timeout'));
-                        }, 15000);
-                    });
+                if (cardAssets && cardAssets[nextIndex]) {
+                    const nextAsset = cardAssets[nextIndex];
                     
-                    const playPromise = this.mainVideo.play();
-                    if (playPromise !== undefined) {
-                        await playPromise;
+                    // Preload image if it's an image file
+                    if (nextAsset.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp|bmp)$/)) {
+                        this.preloadImage(nextAsset).catch(() => {
+                            // Silently fail preloading
+                        });
                     }
                     
-                } catch (error) {
-                    this.showNotification(`Failed to play video: ${error.message}`, 'error');
-                    setTimeout(() => this.showWelcomeScreen(), 2000);
+                    // Preload video if it's a video file
+                    if (nextAsset.toLowerCase().match(/\.(mp4|mov|avi|mkv|webm|m4v)$/)) {
+                        this.preloadVideo(nextAsset).catch(() => {
+                            // Silently fail preloading
+                        });
+                    }
+                }
+                
+                // Also preload the previous asset for instant back navigation
+                const prevIndex = (currentIndex - 1 + totalAssets) % totalAssets;
+                if (cardAssets && cardAssets[prevIndex]) {
+                    const prevAsset = cardAssets[prevIndex];
+                    
+                    if (prevAsset.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp|bmp)$/)) {
+                        this.preloadImage(prevAsset).catch(() => {});
+                    }
+                    
+                    if (prevAsset.toLowerCase().match(/\.(mp4|mov|avi|mkv|webm|m4v)$/)) {
+                        this.preloadVideo(prevAsset).catch(() => {});
+                    }
                 }
             }
 
-            async playImage(imageFile) {
-                this.mainVideo.style.display = 'none';
-                try {
-                    this.mainVideo.pause();
-                } catch (e) {}
-                this.mainVideo.load();
+            async preloadVideo(videoFile) {
+                // Preload video for faster transitions
+                const videoUrl = `http://${this.serverHost}:${this.serverPort}/assets/${videoFile}`;
                 
-                this.mainImage.style.display = 'none';
-                
-                // Check if image is already cached
-                if (this.imageCache.has(imageFile)) {
-                    const cachedImg = this.imageCache.get(imageFile);
-                    this.mainImage.src = cachedImg.src;
-                    this.mainImage.style.display = 'block';
-                    return;
-                }
-                
-                const imageUrl = `http://${this.serverHost}:${this.serverPort}/assets/${imageFile}`;
-                
-                try {
-                    // Try to preload the image first
-                    await this.preloadImage(imageFile);
+                return new Promise((resolve, reject) => {
+                    const video = document.createElement('video');
+                    video.muted = true;
+                    video.preload = 'metadata';
                     
-                    // Use the cached version
-                    const cachedImg = this.imageCache.get(imageFile);
-                    this.mainImage.src = cachedImg.src;
-                    this.mainImage.style.display = 'block';
+                    video.addEventListener('loadedmetadata', () => {
+                        console.log(`🎬 Video preloaded: ${videoFile}`);
+                        resolve(video);
+                    }, { once: true });
                     
-                } catch (error) {
-                    // Fallback to direct loading if preloading fails
-                    console.warn(`Preloading failed for ${imageFile}, trying direct load:`, error);
+                    video.addEventListener('error', () => {
+                        reject(new Error(`Failed to preload video: ${videoFile}`));
+                    }, { once: true });
                     
-                    try {
-                        const response = await fetch(imageUrl, { method: 'GET' });
-                        if (!response.ok) {
-                            throw new Error(`Image not found: ${response.status} ${response.statusText}`);
-                        }
-                        
-                        this.mainImage.src = imageUrl;
-                        this.mainImage.style.display = 'block';
-                        
-                    } catch (fetchError) {
-                        this.showNotification(`Image not accessible: ${fetchError.message}`, 'error');
-                        setTimeout(() => this.showWelcomeScreen(), 2000);
-                        return;
+                    video.src = videoUrl;
+                    video.load();
+                });
+            }
+
+            async handleMixedTransition(fromType, toType, assetFile) {
+                console.log(`🔄 Mixed transition: ${fromType} → ${toType} (${assetFile})`);
+                
+                // Handle transitions between different asset types (image <-> video)
+                if (fromType === 'video' && toType === 'image') {
+                    // Video to Image: Show image immediately, hide videos after
+                    this.playImageInstant(assetFile);
+                    // Hide videos after image is visible
+                    setTimeout(() => {
+                        this.hideAllVideos();
+                    }, 10);
+                } else if (fromType === 'image' && toType === 'video') {
+                    // Image to Video: Show video immediately, hide images after
+                    this.playVideoInstant(assetFile);
+                    // Hide images after video is visible
+                    setTimeout(() => {
+                        this.hideAllImages();
+                    }, 10);
+                } else {
+                    // Same type transition handled by individual methods
+                    if (toType === 'video') {
+                        this.playVideoInstant(assetFile);
+                    } else {
+                        this.playImageInstant(assetFile);
                     }
                 }
             }
-            
-            showWelcomeScreen() {
+
+            hideAllVideos() {
                 this.mainVideo.style.display = 'none';
+                this.mainVideo2.style.display = 'none';
                 try {
                     this.mainVideo.pause();
+                    this.mainVideo2.pause();
                 } catch (e) {}
                 this.mainVideo.load();
-                
+                this.mainVideo2.load();
+            }
+
+            hideAllImages() {
                 this.mainImage.style.display = 'none';
+                this.mainImage2.style.display = 'none';
                 this.mainImage.src = '';
+                this.mainImage2.src = '';
+            }
+
+            async playVideoInstant(videoFile) {
+                console.log(`🎬 Playing video with instant transition: ${videoFile}`);
+                
+                // Hide all image elements immediately
+                this.mainImage.style.display = 'none';
+                this.mainImage2.style.display = 'none';
+                this.mainImage.src = '';
+                this.mainImage2.src = '';
+                
+                // Determine which video element to use for the new video
+                const nextVideoElement = this.currentVideoElement === 'mainVideo' ? 'mainVideo2' : 'mainVideo';
+                const currentVideoElement = this.currentVideoElement === 'mainVideo' ? 'mainVideo' : 'mainVideo2';
+                
+                const nextVideo = this[nextVideoElement];
+                const currentVideo = this[currentVideoElement];
+                
+                console.log(`🎬 Using ${nextVideoElement} for new video, ${currentVideoElement} for current`);
+                
+                const videoUrl = `http://${this.serverHost}:${this.serverPort}/assets/${videoFile}`;
+                
+                // TRULY INSTANT TRANSITION: Show new video while old one is still visible
+                // Prepare new video in background
+                nextVideo.src = videoUrl;
+                nextVideo.load();
+                
+                // Show new video immediately (overlapping with current)
+                nextVideo.style.display = 'block';
+                
+                // Try to play immediately
+                try {
+                    const playPromise = nextVideo.play();
+                    if (playPromise !== undefined) {
+                        playPromise.catch(e => {
+                            console.log(`🎬 Auto-play prevented, will play when ready: ${e.message}`);
+                        });
+                    }
+                } catch (e) {
+                    console.log(`🎬 Play attempt failed, will retry: ${e.message}`);
+                }
+                
+                // Update current element reference
+                this.currentVideoElement = nextVideoElement;
+                
+                // Hide old video after new one is visible (no pause)
+                setTimeout(() => {
+                    currentVideo.style.display = 'none';
+                    try {
+                        currentVideo.pause();
+                    } catch (e) {}
+                }, 10); // Minimal delay to ensure overlap
+                
+                // Load in background for better performance
+                nextVideo.addEventListener('canplay', () => {
+                    console.log(`🎬 Video loaded and ready: ${videoFile}`);
+                    // Try to play again if it wasn't playing
+                    if (nextVideo.paused) {
+                        nextVideo.play().catch(e => console.log('Play failed after load'));
+                    }
+                }, { once: true });
+                
+                nextVideo.addEventListener('error', (e) => {
+                    console.error(`🎬 Video error: ${e.message}`);
+                    this.showNotification(`Video failed to load: ${videoFile}`, 'error');
+                }, { once: true });
+            }
+
+            async playImageInstant(imageFile) {
+                console.log(`🖼️ Playing image with instant transition: ${imageFile}`);
+                
+                // Hide all video elements immediately
+                this.mainVideo.style.display = 'none';
+                this.mainVideo2.style.display = 'none';
+                try {
+                    this.mainVideo.pause();
+                    this.mainVideo2.pause();
+                } catch (e) {}
+                this.mainVideo.load();
+                this.mainVideo2.load();
+                
+                // Determine which image element to use for the new image
+                const nextImageElement = this.currentImageElement === 'mainImage' ? 'mainImage2' : 'mainImage';
+                const currentImageElement = this.currentImageElement === 'mainImage' ? 'mainImage' : 'mainImage2';
+                
+                const nextImage = this[nextImageElement];
+                const currentImage = this[currentImageElement];
+                
+                console.log(`🖼️ Using ${nextImageElement} for new image, ${currentImageElement} for current`);
+                
+                const imageUrl = `http://${this.serverHost}:${this.serverPort}/assets/${imageFile}`;
+                
+                // TRULY INSTANT TRANSITION: Show new image while old one is still visible
+                // Check if image is already cached for instant display
+                if (this.imageCache.has(imageFile)) {
+                    const cachedImg = this.imageCache.get(imageFile);
+                    
+                    // Show new image immediately (overlapping with current)
+                    nextImage.src = cachedImg.src;
+                    nextImage.style.display = 'block';
+                    
+                    console.log(`🖼️ Instant display from cache: ${imageFile}`);
+                    
+                    // Update current element reference
+                    this.currentImageElement = nextImageElement;
+                    
+                    // Hide old image after new one is visible (no pause)
+                    setTimeout(() => {
+                        currentImage.style.display = 'none';
+                        currentImage.src = '';
+                    }, 10); // Minimal delay to ensure overlap
+                    
+                    return;
+                }
+                
+                // Show image immediately with direct URL (overlapping with current)
+                nextImage.src = imageUrl;
+                nextImage.style.display = 'block';
+                
+                console.log(`🖼️ Instant display with direct load: ${imageFile}`);
+                
+                // Update current element reference
+                this.currentImageElement = nextImageElement;
+                
+                // Hide old image after new one is visible (no pause)
+                setTimeout(() => {
+                    currentImage.style.display = 'none';
+                    currentImage.src = '';
+                }, 10); // Minimal delay to ensure overlap
+                
+                // Preload in background for future use
+                this.preloadImage(imageFile).then(() => {
+                    console.log(`🖼️ Image preloaded for future use: ${imageFile}`);
+                }).catch(() => {
+                    // Silently fail preloading
+                });
+            }
+            
+            showWelcomeScreen() {
+                // Hide all video elements
+                this.mainVideo.style.display = 'none';
+                this.mainVideo2.style.display = 'none';
+                try {
+                    this.mainVideo.pause();
+                    this.mainVideo2.pause();
+                } catch (e) {}
+                this.mainVideo.load();
+                this.mainVideo2.load();
+                
+                // Hide all image elements
+                this.mainImage.style.display = 'none';
+                this.mainImage2.style.display = 'none';
+                this.mainImage.src = '';
+                this.mainImage2.src = '';
+                
+                // Reset transition system
+                this.currentVideoElement = 'mainVideo';
+                this.currentImageElement = 'mainImage';
+                this.isTransitioning = false;
                 
                 // Show welcome screen on first visit, splash screen on subsequent visits
                 if (this.isFirstVisit) {
@@ -1074,11 +1353,23 @@
             toggleNavigation(enabled) {
                 const navControls = document.getElementById('navigationControls');
                 const cardAssets = this.cardAssetFiles[this.currentCardId] || [];
-                if (enabled && this.currentCardId && cardAssets.length > 1) {
+                const canNavigate = this.currentCardId && cardAssets.length > 1;
+                
+                console.log(`🧭 Toggle navigation:`, {
+                    enabled: enabled,
+                    canNavigate: canNavigate,
+                    cardId: this.currentCardId,
+                    assetCount: cardAssets.length
+                });
+                
+                if (enabled && canNavigate) {
                     navControls.classList.add('visible');
+                    console.log(`🧭 Navigation controls shown`);
                 } else {
                     navControls.classList.remove('visible');
+                    console.log(`🧭 Navigation controls hidden`);
                 }
+                
                 this.updateNavigationButtons();
             }
 
@@ -1202,6 +1493,52 @@
                 this.preloadLimit = 10; // Reset limit for this batch
                 this.isPreloading = true;
                 this.processPreloadQueue();
+            }
+
+            initVisibilityDetection() {
+                // Create intersection observer to detect when videos are visible
+                this.visibilityObserver = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting && entry.target.tagName === 'VIDEO') {
+                            // Video is visible, ensure it's playing
+                            if (entry.target.paused) {
+                                entry.target.play().catch(e => console.log('Auto-play prevented'));
+                            }
+                        } else if (!entry.isIntersecting && entry.target.tagName === 'VIDEO') {
+                            // Video is not visible, pause it to save resources
+                            if (!entry.target.paused) {
+                                entry.target.pause();
+                            }
+                        }
+                    });
+                }, {
+                    threshold: 0.1 // Trigger when 10% of video is visible
+                });
+
+                // Observe both video elements
+                this.visibilityObserver.observe(this.mainVideo);
+                this.visibilityObserver.observe(this.mainVideo2);
+            }
+
+            cleanup() {
+                // Cleanup visibility observer
+                if (this.visibilityObserver) {
+                    this.visibilityObserver.disconnect();
+                }
+                
+                // Pause and cleanup videos
+                [this.mainVideo, this.mainVideo2].forEach(video => {
+                    try {
+                        video.pause();
+                        video.src = '';
+                        video.load();
+                    } catch (e) {}
+                });
+                
+                // Clear image sources
+                [this.mainImage, this.mainImage2].forEach(img => {
+                    img.src = '';
+                });
             }
         }
         
@@ -1365,6 +1702,13 @@
             }
         });
 
+        // Handle page unload to cleanup resources
+        window.addEventListener('beforeunload', () => {
+            if (window.player) {
+                window.player.cleanup();
+            }
+        });
+
         // Handle keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (e.key.toLowerCase() === 'c') {
@@ -1392,6 +1736,10 @@
             }
             if (e.key.toLowerCase() === 'n' && window.player) {
                 window.player.quickToggleNavigation();
+            }
+            // Force refresh navigation (debug)
+            if (e.key.toLowerCase() === 'r' && window.player) {
+                window.player.forceRefreshNavigation();
             }
         });
 

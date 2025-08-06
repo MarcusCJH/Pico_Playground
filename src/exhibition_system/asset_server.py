@@ -271,7 +271,7 @@ class AssetServer:
         return True
 
     def play_asset(self, filename, card_id="", asset_index=0, total_assets=1, asset_files=None):
-        """Play an asset file (video or image) and notify web clients"""
+        """Play an asset file (video or image) and notify web clients with instant transition support"""
         asset_path = self.get_asset_path(filename)
         
         if not os.path.exists(asset_path):
@@ -280,6 +280,7 @@ class AssetServer:
         
         asset_type = self.get_asset_type(filename)
         
+        # Enhanced asset info for instant transitions
         self.last_asset_info = {
             'asset_file': filename,
             'asset_type': asset_type,
@@ -287,7 +288,8 @@ class AssetServer:
             'asset_index': asset_index,
             'total_assets': total_assets,
             'asset_files': asset_files or [],  # Include asset files for web player navigation
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now().isoformat(),
+            'transition_type': 'instant'  # Indicate instant transition support
         }
         
         # Track the card scan as mapped
@@ -295,7 +297,7 @@ class AssetServer:
             self.track_card_scan(card_id, is_mapped=True)
         
         self.assets_played += 1
-        logger.info(f"Asset triggered: {filename} ({asset_type}) (Card: {card_id}, {asset_index + 1}/{total_assets})")
+        logger.info(f"Asset triggered: {filename} ({asset_type}) (Card: {card_id}, {asset_index + 1}/{total_assets}) - Instant transition")
         return True
     
     def play_assets_directly(self, asset_files, card_id="", asset_index=0):
@@ -694,13 +696,19 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_safe_response(500, 'text/plain', 'Error serving asset')
     
     def serve_full_file(self, asset_path, file_size, mime_type, filename):
-        """Serve entire file"""
+        """Serve entire file with optimized headers for instant transitions"""
         try:
             self.send_response(200)
             self.send_header('Content-Type', mime_type)
             self.send_header('Content-Length', str(file_size))
             if mime_type.startswith('video/'):
                 self.send_header('Accept-Ranges', 'bytes')
+            # Add caching headers for faster loading
+            self.send_header('Cache-Control', 'public, max-age=3600, immutable')  # Cache for 1 hour, immutable
+            self.send_header('ETag', f'"{hash(filename)}"')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Methods', 'GET, HEAD')
+            self.send_header('Access-Control-Allow-Headers', 'Range')
             self.end_headers()
             
             with open(asset_path, 'rb') as f:
