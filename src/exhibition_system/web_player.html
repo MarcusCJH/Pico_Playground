@@ -43,6 +43,13 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
+            /* Hardware acceleration for smoother transitions */
+            will-change: transform;
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+            /* Optimize for faster rendering */
+            image-rendering: optimizeSpeed;
+            image-rendering: -webkit-optimize-contrast;
         }
 
         /* Transition states - Instant transitions */
@@ -1023,9 +1030,10 @@
                 return new Promise((resolve, reject) => {
                     const video = document.createElement('video');
                     video.muted = true;
-                    video.preload = 'metadata';
+                    video.preload = 'auto'; // Changed from 'metadata' to 'auto' for faster loading
+                    video.playsInline = true;
                     
-                    video.addEventListener('loadedmetadata', () => {
+                    video.addEventListener('loadeddata', () => {
                         resolve(video);
                     }, { once: true });
                     
@@ -1039,22 +1047,15 @@
             }
 
             async handleMixedTransition(fromType, toType, assetFile) {
-                
                 // Handle transitions between different asset types (image <-> video)
                 if (fromType === 'video' && toType === 'image') {
-                    // Video to Image: Show image immediately, hide videos after
+                    // Video to Image: Hide videos immediately, then show image
+                    this.hideAllVideos();
                     this.playImageInstant(assetFile);
-                    // Hide videos after image is visible
-                    setTimeout(() => {
-                        this.hideAllVideos();
-                    }, 10);
                 } else if (fromType === 'image' && toType === 'video') {
-                    // Image to Video: Show video immediately, hide images after
+                    // Image to Video: Hide images immediately, then show video
+                    this.hideAllImages();
                     this.playVideoInstant(assetFile);
-                    // Hide images after video is visible
-                    setTimeout(() => {
-                        this.hideAllImages();
-                    }, 10);
                 } else {
                     // Same type transition handled by individual methods
                     if (toType === 'video') {
@@ -1084,8 +1085,7 @@
             }
 
             async playVideoInstant(videoFile) {
-                
-                // Hide all image elements immediately
+                // IMMEDIATE HIDE: Hide all image elements instantly
                 this.mainImage.style.display = 'none';
                 this.mainImage2.style.display = 'none';
                 this.mainImage.src = '';
@@ -1098,14 +1098,16 @@
                 const nextVideo = this[nextVideoElement];
                 const currentVideo = this[currentVideoElement];
                 
+                // IMMEDIATE HIDE: Hide current video instantly to prevent overlap
+                currentVideo.style.display = 'none';
+                try {
+                    currentVideo.pause();
+                } catch (e) {}
+                
                 const videoUrl = `http://${this.serverHost}:${this.serverPort}/assets/${videoFile}`;
                 
-                // TRULY INSTANT TRANSITION: Show new video while old one is still visible
-                // Prepare new video in background
+                // FASTER TRANSITION: Set source and show immediately
                 nextVideo.src = videoUrl;
-                nextVideo.load();
-                
-                // Show new video immediately (overlapping with current)
                 nextVideo.style.display = 'block';
                 
                 // Try to play immediately
@@ -1113,21 +1115,15 @@
                     const playPromise = nextVideo.play();
                     if (playPromise !== undefined) {
                         playPromise.catch(e => {
+                            // Silent fail for autoplay restrictions
                         });
                     }
                 } catch (e) {
+                    // Silent fail
                 }
                 
                 // Update current element reference
                 this.currentVideoElement = nextVideoElement;
-                
-                // Hide old video after new one is visible (no pause)
-                setTimeout(() => {
-                    currentVideo.style.display = 'none';
-                    try {
-                        currentVideo.pause();
-                    } catch (e) {}
-                }, 10); // Minimal delay to ensure overlap
                 
                 // Load in background for better performance
                 nextVideo.addEventListener('canplay', () => {
@@ -1145,16 +1141,13 @@
             }
 
             async playImageInstant(imageFile) {
-                
-                // Hide all video elements immediately
+                // IMMEDIATE HIDE: Hide all video elements instantly
                 this.mainVideo.style.display = 'none';
                 this.mainVideo2.style.display = 'none';
                 try {
                     this.mainVideo.pause();
                     this.mainVideo2.pause();
                 } catch (e) {}
-                this.mainVideo.load();
-                this.mainVideo2.load();
                 
                 // Determine which image element to use for the new image
                 const nextImageElement = this.currentImageElement === 'mainImage' ? 'mainImage2' : 'mainImage';
@@ -1163,28 +1156,24 @@
                 const nextImage = this[nextImageElement];
                 const currentImage = this[currentImageElement];
                 
-                // TRULY INSTANT TRANSITION: Show new image while old one is still visible
-                // Check if image is already cached for instant display
+                // IMMEDIATE HIDE: Hide current image instantly to prevent overlap
+                currentImage.style.display = 'none';
+                currentImage.src = '';
+                
+                // FASTER TRANSITION: Check cache first for instant display
                 if (this.imageCache.has(imageFile)) {
                     const cachedImg = this.imageCache.get(imageFile);
                     
-                    // Show new image immediately (overlapping with current)
+                    // Show cached image immediately
                     nextImage.src = cachedImg.src;
                     nextImage.style.display = 'block';
                     
                     // Update current element reference
                     this.currentImageElement = nextImageElement;
-                    
-                    // Hide old image after new one is visible (no pause)
-                    setTimeout(() => {
-                        currentImage.style.display = 'none';
-                        currentImage.src = '';
-                    }, 10); // Minimal delay to ensure overlap
-                    
                     return;
                 }
                 
-                // Show image immediately with direct URL (overlapping with current)
+                // Show image immediately with direct URL
                 const imageUrl = `http://${this.serverHost}:${this.serverPort}/assets/${imageFile}`;
                 nextImage.src = imageUrl;
                 nextImage.style.display = 'block';
@@ -1192,14 +1181,9 @@
                 // Update current element reference
                 this.currentImageElement = nextImageElement;
                 
-                // Hide old image after new one is visible (no pause)
-                setTimeout(() => {
-                    currentImage.style.display = 'none';
-                    currentImage.src = '';
-                }, 10); // Minimal delay to ensure overlap
-                
                 // Preload in background for future use
                 this.preloadImage(imageFile).then(() => {
+                    // Successfully cached
                 }).catch(() => {
                     // Silently fail preloading
                 });
@@ -1337,14 +1321,13 @@
             async preloadCardImages(cardId, assetFiles) {
                 if (!assetFiles || !Array.isArray(assetFiles)) return;
                 
-                const imageFiles = assetFiles.filter(file => 
-                    file.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp|bmp)$/)
-                );
+                // Preload ALL assets (not just images) for instant transitions
+                const allAssets = assetFiles;
                 
-                if (imageFiles.length === 0) return;
+                if (allAssets.length === 0) return;
                 
-                // Add to preload queue
-                this.preloadQueue.push(...imageFiles.map(file => ({ cardId, file })));
+                // Add to preload queue with higher priority for current card
+                this.preloadQueue.unshift(...allAssets.map(file => ({ cardId, file, priority: true })));
                 
                 // Start preloading if not already running
                 if (!this.isPreloading) {
@@ -1358,20 +1341,41 @@
                 this.isPreloading = true;
                 
                 while (this.preloadQueue.length > 0) {
-                    const batch = this.preloadQueue.splice(0, 10); // Changed from preloadLimit to 10
+                    // Process priority items first (current card assets)
+                    const priorityItems = this.preloadQueue.filter(item => item.priority);
+                    const regularItems = this.preloadQueue.filter(item => !item.priority);
+                    
+                    // Process priority items in smaller batches for faster loading
+                    const priorityBatch = priorityItems.splice(0, 5);
+                    const regularBatch = regularItems.splice(0, 10);
+                    
+                    const batch = [...priorityBatch, ...regularBatch];
+                    
+                    // Remove processed items from queue
+                    this.preloadQueue = this.preloadQueue.filter(item => 
+                        !batch.some(batchItem => 
+                            batchItem.cardId === item.cardId && batchItem.file === item.file
+                        )
+                    );
                     
                     const preloadPromises = batch.map(async ({ cardId, file }) => {
                         try {
-                            await this.preloadImage(file);
+                            if (file.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp|bmp)$/)) {
+                                await this.preloadImage(file);
+                            } else if (file.toLowerCase().match(/\.(mp4|mov|avi|mkv|webm|m4v)$/)) {
+                                await this.preloadVideo(file);
+                            }
                         } catch (error) {
+                            // Silent fail for preloading
                         }
                     });
                     
                     await Promise.allSettled(preloadPromises);
                     
-                    // Small delay between batches to avoid overwhelming the server
+                    // Shorter delay for priority items
+                    const delay = batch.some(item => item.priority) ? 50 : 100;
                     if (this.preloadQueue.length > 0) {
-                        await new Promise(resolve => setTimeout(resolve, 100));
+                        await new Promise(resolve => setTimeout(resolve, delay));
                     }
                 }
                 
