@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Start Exhibition System
+Comment=Start the RFID Exhibition System with auto browser launch
+Exec=/home/rpi5/Desktop/setup_and_run.sh
+Icon=applications-multimedia
+Terminal=true
+Categories=AudioVideo;Player;
+StartupNotify=true

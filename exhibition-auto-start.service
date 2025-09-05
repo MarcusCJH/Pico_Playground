@@ -1,0 +1,19 @@
+[Unit]
+Description=RFID Exhibition System Auto-Start
+After=network.target graphical-session.target
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+User=rpi5
+Group=rpi5
+Environment=DISPLAY=:0
+WorkingDirectory=/home/rpi5/Desktop
+ExecStart=/home/rpi5/Desktop/setup_and_run.sh
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical.target
