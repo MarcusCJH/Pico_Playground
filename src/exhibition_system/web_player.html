@@ -127,7 +127,7 @@
             position: absolute;
             bottom: 20px;
             right: 20px;
-            z-index: 200;
+            z-index: 300;
             transition: opacity 0.3s ease;
         }
 
@@ -679,7 +679,7 @@
                 toggleContainer.innerHTML = `
                     Navigation Controls
                     <label class="switch">
-                        <input type="checkbox" id="navigationToggle" onchange="window.player.toggleNavigation(this.checked)">
+                        <input type="checkbox" id="navigationToggle" onchange="window.player.toggleNavigation(this.checked)" checked>
                         <span class="slider"></span>
                     </label>
                 `;
