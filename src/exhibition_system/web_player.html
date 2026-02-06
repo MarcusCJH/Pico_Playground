@@ -205,14 +205,14 @@
 
 
 
-        /* Navigation Controls - Full Screen Overlay */
+        /* Navigation Controls - Full Screen Overlay (mobile only) */
         #navigationControls {
             position: fixed;
             top: 60px;
             left: 0;
             right: 0;
             bottom: 0;
-            display: flex;
+            display: none;
             z-index: 250;
             pointer-events: none;
             opacity: 0;
@@ -220,10 +220,27 @@
             transition: opacity 0.3s ease;
         }
 
+        @media (max-width: 768px) {
+            #navigationControls {
+                display: flex;
+            }
+        }
+
         #navigationControls.visible {
             opacity: 1;
             visibility: visible;
             pointer-events: auto;
+        }
+
+        /* Hide navigation overlay on desktop/web (never show on large screens) */
+        @media (min-width: 769px) {
+            #navigationControls,
+            #navigationControls.visible {
+                display: none !important;
+                visibility: hidden !important;
+                pointer-events: none !important;
+                opacity: 0 !important;
+            }
         }
 
         #navigationControls button {
