@@ -1,6 +1,7 @@
 """
-RC522 RFID Reader Implementation for Pico Dual Expander Board
-This program demonstrates RFID card reading with visual and audio feedback.
+Exhibition Client for Custom Pico Board with RC522
+Simple RFID scanner that triggers videos and images on a remote server
+Uses custom pico board with RC522 RFID reader and buzzer feedback
 
 Pin Layout and Color Coding (Left Side Organization):
 
@@ -14,12 +15,17 @@ RC522 RFID Reader Connections:
 - MISO     -> GP0  [WHITE]   (SPI Master In Slave Out)
 
 Feedback Components:
-- LED      -> GP21 [PURPLE]  (Visual feedback - already on board)
-- Buzzer   -> GP15 [BROWN]   (Audio feedback - optional)
+- LED      -> GP21 [PURPLE]  (Visual feedback)
+- Buzzer   -> GP15 [BROWN]   (Audio feedback)
 """
 
-from machine import Pin, SPI, PWM
+import network
+import urequests
+import json
 import time
+import gc  # Garbage collection for memory management
+from machine import Pin, SPI, PWM
+import config
 
 class MFRC522:
     NRSTPD = 22
@@ -51,73 +57,23 @@ class MFRC522:
     MI_NOTAGERR = 1
     MI_ERR = 2
 
-    Reserved00 = 0x00
+    # Register addresses
     CommandReg = 0x01
     CommIEnReg = 0x02
-    DivlEnReg = 0x03
     CommIrqReg = 0x04
-    DivIrqReg = 0x05
     ErrorReg = 0x06
-    Status1Reg = 0x07
-    Status2Reg = 0x08
     FIFODataReg = 0x09
     FIFOLevelReg = 0x0A
-    WaterLevelReg = 0x0B
     ControlReg = 0x0C
     BitFramingReg = 0x0D
-    CollReg = 0x0E
-    Reserved01 = 0x0F
-
-    Reserved10 = 0x10
     ModeReg = 0x11
-    TxModeReg = 0x12
-    RxModeReg = 0x13
     TxControlReg = 0x14
     TxAutoReg = 0x15
-    TxSelReg = 0x16
-    RxSelReg = 0x17
-    RxThresholdReg = 0x18
-    DemodReg = 0x19
-    Reserved11 = 0x1A
-    Reserved12 = 0x1B
-    MifareReg = 0x1C
-    Reserved13 = 0x1D
-    Reserved14 = 0x1E
-    SerialSpeedReg = 0x1F
-
-    Reserved20 = 0x20
-    CRCResultRegM = 0x21
-    CRCResultRegL = 0x22
-    Reserved21 = 0x23
-    ModWidthReg = 0x24
-    Reserved22 = 0x25
-    RFCfgReg = 0x26
-    GsNReg = 0x27
-    CWGsPReg = 0x28
-    ModGsPReg = 0x29
     TModeReg = 0x2A
     TPrescalerReg = 0x2B
-    TReloadRegH = 0x2C
-    TReloadRegL = 0x2D
-    TCounterValueRegH = 0x2E
-    TCounterValueRegL = 0x2F
-
-    Reserved30 = 0x30
-    TestSel1Reg = 0x31
-    TestSel2Reg = 0x32
-    TestPinEnReg = 0x33
-    TestPinValueReg = 0x34
-    TestBusReg = 0x35
-    AutoTestReg = 0x36
+    TReloadRegL = 0x2C
+    TReloadRegH = 0x2D
     VersionReg = 0x37
-    AnalogTestReg = 0x38
-    TestDAC1Reg = 0x39
-    TestDAC2Reg = 0x3A
-    TestADCReg = 0x3B
-    Reserved31 = 0x3C
-    Reserved32 = 0x3D
-    Reserved33 = 0x3E
-    Reserved34 = 0x3F
 
     def __init__(self, spi, cs, rst=None):
         self.spi = spi
@@ -131,9 +87,9 @@ class MFRC522:
     def MFRC522_Reset(self):
         if self.rst:
             self.rst.value(0)
-            time.sleep(0.1)
+            time.sleep(0.05)  # Reduced from 0.1s
             self.rst.value(1)
-            time.sleep(0.1)
+            time.sleep(0.05)  # Reduced from 0.1s
         self.Write_MFRC522(self.CommandReg, self.PCD_RESETPHASE)
 
     def Write_MFRC522(self, addr, val):
@@ -161,17 +117,12 @@ class MFRC522:
         if(~(temp & 0x03)):
             self.SetBitMask(self.TxControlReg, 0x03)
 
-    def AntennaOff(self):
-        self.ClearBitMask(self.TxControlReg, 0x03)
-
     def MFRC522_ToCard(self, command, sendData):
         backData = []
         backLen = 0
         status = self.MI_ERR
         irqEn = 0x00
         waitIRq = 0x00
-        lastBits = None
-        n = 0
 
         if command == self.PCD_AUTHENT:
             irqEn = 0x12
@@ -194,7 +145,8 @@ class MFRC522:
         if command == self.PCD_TRANSCEIVE:
             self.SetBitMask(self.BitFramingReg, 0x80)
 
-        i = 2000
+        # Reduced timeout for faster response
+        i = 1500  # Reduced from 2000
         while True:
             n = self.Read_MFRC522(self.CommIrqReg)
             i = i - 1
@@ -225,8 +177,6 @@ class MFRC522:
 
                     for i in range(n):
                         backData.append(self.Read_MFRC522(self.FIFODataReg))
-            else:
-                status = self.MI_ERR
 
         return (status, backData, backLen)
 
@@ -270,42 +220,13 @@ class MFRC522:
 
         return (status, backData)
 
-    def CalulateCRC(self, pIndata):
-        self.ClearBitMask(self.DivIrqReg, 0x04)
-        self.SetBitMask(self.FIFOLevelReg, 0x80)
-
-        for i in range(len(pIndata)):
-            self.Write_MFRC522(self.FIFODataReg, pIndata[i])
-
-        self.Write_MFRC522(self.CommandReg, self.PCD_CALCCRC)
-        i = 0xFF
-        while True:
-            n = self.Read_MFRC522(self.DivIrqReg)
-            i = i - 1
-            if not ((i != 0) and not (n & 0x04)):
-                break
-        pOutData = []
-        pOutData.append(self.Read_MFRC522(self.CRCResultRegL))
-        pOutData.append(self.Read_MFRC522(self.CRCResultRegM))
-        return pOutData
-
     def MFRC522_Init(self):
         self.MFRC522_Reset()
-        
-        # Add version check
-        version = self.Read_MFRC522(self.VersionReg)
-        print(f"MFRC522 Version: 0x{version:02x}")
-        
-        # Update version check to include 0x82
-        if version not in [0x91, 0x92, 0x82]:
-            print("Warning: Unknown MFRC522 version or communication error!")
-        else:
-            print("Valid MFRC522 version detected")
 
         # Configure timer
         self.Write_MFRC522(self.TModeReg, 0x8D)        # Tauto=1; f(Timer) = 6.78MHz/TPreScaler
         self.Write_MFRC522(self.TPrescalerReg, 0x3E)   # TModeReg[3..0] + TPrescalerReg
-        self.Write_MFRC522(self.TReloadRegL, 30)       
+        self.Write_MFRC522(self.TReloadRegL, 30)
         self.Write_MFRC522(self.TReloadRegH, 0)
 
         # Configure modulation
@@ -314,195 +235,453 @@ class MFRC522:
 
         # Turn on the antenna
         self.AntennaOn()
-        print("MFRC522 Initialized")
 
-class PicoExpanderRFID:
+class ExhibitionClientPico:
     def __init__(self):
-        # Initialize feedback components
+        # Configuration from config.py
+        self.WIFI_SSID = config.WIFI_SSID
+        self.WIFI_PASSWORD = config.WIFI_PASSWORD
+        self.SERVER_IP = config.SERVER_IP
+        self.SERVER_PORT = config.SERVER_PORT
+        self.card_assets = config.CARD_ASSETS
+
+        # Hardware Setup
+        self.setup_hardware()
+
+        # Optimized state management
+        self.wifi_connected = False
+        self.current_card = None
+        self.card_present = False
+        self.card_processed = False  # Track if current card has been processed
+        self.last_process_time = 0
+        self.process_cooldown = 1.0  # Reduced from 1.5 seconds
+
+        # Simplified card detection
+        self.consecutive_detections = 0
+        self.consecutive_failures = 0
+
+        # Performance constants
+        self.DETECTION_THRESHOLD = 2  # Reduced from 3
+        self.REMOVAL_THRESHOLD = 15   # Much higher threshold for stable removal detection
+
+        # Performance monitoring
+        self.scan_count = 0
+        self.start_time = time.time()
+        self.last_stats_time = time.time()
+
+        # Memory management
+        self.gc_counter = 0
+        self.GC_INTERVAL = 100  # Run GC every 100 scans
+
+    def setup_hardware(self):
+        """Initialize hardware components with optimized settings"""
+        # Initialize LEDs
         self.led = Pin(21, Pin.OUT)  # External LED
         self.onboard_led = Pin("LED", Pin.OUT)  # Built-in Pico W LED
-        
-        # Initialize buzzer (optional)
-        try:
-            self.buzzer = PWM(Pin(15))
-            self.buzzer.duty_u16(0)
-            self.has_buzzer = True
-        except:
-            self.has_buzzer = False
-            print("Buzzer not available on GP15")
-        
-        print("Pico Expander RFID Reader initialized!")
-        print("\nComponent Connections:")
-        print("RC522 RFID Reader:")
-        print("- VCC/3.3V -> 3.3V [RED]")
-        print("- GND      -> GND  [BLACK]")
-        print("- RST      -> GP5  [YELLOW]")
-        print("- SDA/CS   -> GP1  [BLUE]")
-        print("- SCK      -> GP2  [GREEN]")
-        print("- MOSI     -> GP3  [ORANGE]")
-        print("- MISO     -> GP0  [WHITE]")
-        print("\nFeedback:")
-        print("- External LED -> GP21 [PURPLE]")
-        print("- Built-in LED -> Pico W onboard LED")
-        if self.has_buzzer:
-            print("- Buzzer   -> GP15 [BROWN]")
-    
-    def beep(self, frequency=1000, duration=0.1):
-        """Play a beep sound if buzzer is available"""
-        if self.has_buzzer:
-            self.buzzer.duty_u16(5000)
-            self.buzzer.freq(frequency)
-            time.sleep(duration)
-            self.buzzer.duty_u16(0)
-    
-    def success_feedback(self):
-        """Provide success feedback with LEDs and optional buzzer"""
-        # LED pattern: quick flash for both LEDs
-        for _ in range(3):
-            self.led.on()
-            self.onboard_led.on()
-            time.sleep(0.1)
-            self.led.off()
-            self.onboard_led.off()
-            time.sleep(0.1)
-        
-        # Buzzer: success tone
-        if self.has_buzzer:
-            self.beep(1000, 0.1)
-            time.sleep(0.05)
-            self.beep(1500, 0.1)
-    
-    def error_feedback(self):
-        """Provide error feedback with LEDs and optional buzzer"""
-        # LED pattern: long flash for both LEDs
-        self.led.on()
-        self.onboard_led.on()
-        time.sleep(0.5)
-        self.led.off()
-        self.onboard_led.off()
-        
-        # Buzzer: error tone
-        if self.has_buzzer:
-            self.beep(500, 0.3)
 
-# Main program
-def main():
-    print("Initializing Pico Expander RFID System...")
-    
-    # Initialize feedback system
-    feedback = PicoExpanderRFID()
-    
-    print("\nInitializing SPI...")
-    try:
-        # Initialize pins first
+        # Initialize buzzer
+        self.buzzer = PWM(Pin(15))
+        self.buzzer.duty_u16(0)
+
+        # Initialize RC522 RFID reader with optimized SPI settings
         sck = Pin(2, Pin.OUT)
         mosi = Pin(3, Pin.OUT)
         miso = Pin(0, Pin.IN)
         cs = Pin(1, Pin.OUT)
         rst = Pin(5, Pin.OUT)
-        
+
         # Set initial states
-        cs.value(1)  # CS must be high initially
-        sck.value(0)  # Clock low initially
-        rst.value(1)  # RST high initially
-        
-        # Initialize SPI with lower baudrate and mode 0
+        cs.value(1)
+        sck.value(0)
+        rst.value(1)
+
+        # Initialize SPI with higher baudrate for better performance
         spi = SPI(0,
-                baudrate=1000000,  # 1MHz
-                polarity=0,
-                phase=0,
-                bits=8,
-                firstbit=SPI.MSB,
-                sck=sck,
-                mosi=mosi,
-                miso=miso)
-        
-        print("SPI initialized successfully")
-        print("Testing SPI communication...")
-        
-        # Initialize RC522 RFID reader
-        print("Initializing MFRC522...")
-        rfid = MFRC522(spi, cs, rst)
-        
-        # Read version register multiple times to ensure communication
-        versions = []
-        for i in range(3):
-            version = rfid.Read_MFRC522(rfid.VersionReg)
-            versions.append(version)
-            print(f"MFRC522 Version Read {i+1}: 0x{version:02x}")
-            time.sleep(0.1)
-            
-        if len(set(versions)) != 1 or versions[0] in [0x00, 0xFF]:
-            print("\nDiagnostic Information:")
-            print("- Inconsistent or invalid version readings")
-            print("Please check connections according to color coding:")
-            print("  VCC/3.3V -> 3.3V [RED]")
-            print("  GND      -> GND  [BLACK]")
-            print("  RST      -> GP5  [YELLOW]")
-            print("  SDA/CS   -> GP1  [BLUE]")
-            print("  SCK      -> GP2  [GREEN]")
-            print("  MOSI     -> GP3  [ORANGE]")
-            print("  MISO     -> GP0  [WHITE]")
-            feedback.error_feedback()
+                  baudrate=2000000,  # Increased from 1MHz to 2MHz
+                  polarity=0,
+                  phase=0,
+                  bits=8,
+                  firstbit=SPI.MSB,
+                  sck=sck,
+                  mosi=mosi,
+                  miso=miso)
+
+        self.rfid = MFRC522(spi, cs, rst)
+
+        print("Hardware initialized with performance optimizations!")
+        print("RC522 RFID Reader ready (2MHz SPI)")
+        print("LEDs and buzzer ready")
+
+    def beep(self, frequency=1000, duration=0.15):  # Restored reasonable duration
+        """Play a beep sound"""
+        self.buzzer.duty_u16(5000)
+        self.buzzer.freq(frequency)
+        time.sleep(duration)
+        self.buzzer.duty_u16(0)
+
+    def success_feedback(self):
+        """Provide optimized success feedback"""
+        # Faster LED pattern
+        for _ in range(2):  # Reduced from 3
+            self.led.on()
+            self.onboard_led.on()
+            time.sleep(0.05)  # Reduced from 0.1
+            self.led.off()
+            self.onboard_led.off()
+            time.sleep(0.05)
+
+        # Pleasant success tone
+        self.beep(1200, 0.2)
+
+    def error_feedback(self):
+        """Provide optimized error feedback"""
+        # Shorter LED flash
+        self.led.on()
+        self.onboard_led.on()
+        time.sleep(0.2)  # Reduced from 0.5
+        self.led.off()
+        self.onboard_led.off()
+
+        # Clear error tone
+        self.beep(500, 0.25)  # Longer for better error indication
+
+    def connect_wifi(self):
+        """Optimized WiFi connection"""
+        print("Connecting to WiFi...")
+
+        wlan = network.WLAN(network.STA_IF)
+        wlan.active(True)
+
+        # FAST PATH: Try quick connection first
+        print("Trying fast connection...")
+        if not wlan.isconnected():
+            wlan.connect(self.WIFI_SSID, self.WIFI_PASSWORD)
+
+            # Reduced timeout
+            timeout = 12  # 6 seconds total
+            while not wlan.isconnected() and timeout > 0:
+                self.onboard_led.toggle()
+                time.sleep(0.5)
+                timeout -= 1
+
+        if wlan.isconnected():
+            self.wifi_connected = True
+            ip = wlan.ifconfig()[0]
+            print(f"WiFi Connected Fast! IP: {ip}")
+            self.beep(1000, 0.15)
+            return True
+
+        # ROBUST PATH: Simplified robust method
+        print("Fast connection failed, trying robust method...")
+        time.sleep(0.5)  # Reduced stabilization delay
+
+        # Reset WiFi
+        wlan.active(False)
+        time.sleep(0.3)
+        wlan.active(True)
+        time.sleep(0.3)
+
+        # Single robust attempt with shorter timeout
+        print("Robust connection attempt...")
+        wlan.connect(self.WIFI_SSID, self.WIFI_PASSWORD)
+
+        timeout = 16  # 8 seconds total
+        while not wlan.isconnected() and timeout > 0:
+            self.onboard_led.toggle()
+            time.sleep(0.5)
+            timeout -= 1
+
+        if wlan.isconnected():
+            self.wifi_connected = True
+            ip = wlan.ifconfig()[0]
+            print(f"WiFi Connected! IP: {ip}")
+            self.beep(1000, 0.15)
+            return True
+
+        print("WiFi connection failed!")
+        self.error_feedback()
+        return False
+
+    def test_server(self):
+        """Test server connection with shorter timeout"""
+        try:
+            print("Testing server connection...")
+            url = f"http://{self.SERVER_IP}:{self.SERVER_PORT}/ping"
+            response = urequests.get(url, timeout=3)  # Reduced from 5s
+
+            if response.status_code == 200:
+                print("Server connection OK!")
+                self.beep(1200, 0.15)
+                response.close()
+                return True
+            else:
+                raise Exception(f"Server error: {response.status_code}")
+
+        except Exception as e:
+            print(f"Server test failed: {e}")
+            self.error_feedback()
+            return False
+
+    def trigger_card_assets(self, card_id):
+        """Optimized card trigger with shorter timeout and better memory management"""
+        response = None
+        try:
+            # Get assets for this card from local mapping
+            assets = self.card_assets.get(card_id, [])
+
+            # Handle both old format (string) and new format (list)
+            if isinstance(assets, str):
+                assets = [assets]
+
+            if not assets:
+                print(f"No assets mapped for card: {card_id}")
+                return False
+
+            url = f"http://{self.SERVER_IP}:{self.SERVER_PORT}/play"
+            data = {
+                "card_id": card_id,  # Still send for logging purposes
+                "asset_files": assets,  # Send the actual asset filenames
+                "timestamp": time.time()
+            }
+
+            response = urequests.post(
+                url,
+                data=json.dumps(data),
+                headers={'Content-Type': 'application/json'},
+                timeout=5  # Reduced from 10s
+            )
+
+            success = response.status_code == 200
+            if success:
+                # Parse response efficiently
+                try:
+                    response_data = response.json()
+                    asset_file = response_data.get('asset_file', 'Unknown')
+                    asset_index = response_data.get('asset_index', 0)
+                    total_assets = response_data.get('total_assets', 1)
+                    print(f"Asset: {asset_file} ({asset_index + 1}/{total_assets})")
+                except:
+                    pass
+
+            return success
+
+        except Exception as e:
+            print(f"Failed to trigger card assets: {e}")
+            return False
+        finally:
+            if response:
+                response.close()
+                response = None
+            gc.collect()
+
+    def trigger_unknown_card(self, card_id):
+        """Optimized unknown card logging"""
+        response = None
+        try:
+            url = f"http://{self.SERVER_IP}:{self.SERVER_PORT}/unknown-card"
+            data = {
+                "card_id": card_id,
+                "timestamp": time.time()
+            }
+
+            response = urequests.post(
+                url,
+                data=json.dumps(data),
+                headers={'Content-Type': 'application/json'},
+                timeout=3  # Reduced timeout
+            )
+
+            success = response.status_code == 200
+            if success:
+                print(f"Unknown card {card_id} logged")
+            return success
+
+        except Exception as e:
+            print(f"Failed to log unknown card: {e}")
+            return False
+        finally:
+            if response:
+                response.close()
+            gc.collect()
+
+    def trigger_card_removal(self, card_id):
+        """Optimized card removal signal"""
+        response = None
+        try:
+            url = f"http://{self.SERVER_IP}:{self.SERVER_PORT}/card-removed"
+            data = {
+                "card_id": card_id,
+                "timestamp": time.time()
+            }
+
+            response = urequests.post(
+                url,
+                data=json.dumps(data),
+                headers={'Content-Type': 'application/json'},
+                timeout=3  # Reduced timeout
+            )
+
+            success = response.status_code == 200
+            if success:
+                print(f"Card {card_id} removal signaled")
+            return success
+
+        except Exception as e:
+            print(f"Failed to signal card removal: {e}")
+            return False
+        finally:
+            if response:
+                response.close()
+            gc.collect()
+
+    def format_uid(self, uid):
+        """Format the UID as a hex string with colons between bytes"""
+        return ':'.join(f'{x:02x}' for x in uid)
+
+    def process_card(self, card_id):
+        """Optimized card processing with simplified state management"""
+        # Process the card (cooldown logic is handled in main loop)
+        self.current_card = card_id
+        self.last_process_time = time.time()
+        self.scan_count += 1
+
+        print(f"Card: {card_id} (#{self.scan_count})")
+
+        # Quick LED feedback
+        self.led.on()
+        self.onboard_led.on()
+
+        # Try to trigger card assets (mapping check is now inside trigger_card_assets)
+        if self.trigger_card_assets(card_id):
+            # Successfully triggered assets
+            self.success_feedback()
+        else:
+            # Failed to trigger (either no mapping or server error)
+            print(f"Failed to trigger assets for card: {card_id}")
+            self.error_feedback()
+            self.trigger_unknown_card(card_id)
+
+        # Turn off LEDs
+        self.led.off()
+        self.onboard_led.off()
+
+        return True
+
+    def print_performance_stats(self):
+        """Print performance statistics"""
+        current_time = time.time()
+        if current_time - self.last_stats_time > 30:  # Every 30 seconds
+            elapsed = current_time - self.start_time
+            if elapsed > 0:
+                scan_rate = self.scan_count / elapsed
+                print(f"Performance: {scan_rate:.1f} scans/sec, {self.scan_count} total scans")
+                print(f"Memory free: {gc.mem_free()} bytes")
+            self.last_stats_time = current_time
+
+    def run(self):
+        """Optimized main loop"""
+        print("Starting Performance-Optimized Exhibition Client...")
+        print("Performance improvements:")
+        print("- Faster SPI (2MHz)")
+        print("- Reduced delays and timeouts")
+        print("- Optimized card detection")
+        print("- Better memory management")
+        print("Created by Marcus Chan")
+
+        if not self.connect_wifi():
+            print("WiFi connection failed!")
             return
-        
-        # Success feedback for initialization
-        feedback.success_feedback()
-        
-        print("\nPico Expander RC522 RFID Reader Ready!")
-        print("Place an RFID card near the reader...")
-        print("(LED will flash and buzzer will beep when a card is detected)")
-        
-        last_read_time = 0
-        
-        while True:
-            try:
+
+        if not self.test_server():
+            print("Server connection failed!")
+
+        print(f"\nReady! Mapped cards: {len(self.card_assets)}")
+        print(f"Cooldown: {self.process_cooldown}s")
+
+        # Ready indication
+        self.beep(800, 0.2)
+        time.sleep(0.1)
+        self.beep(1000, 0.2)
+
+        try:
+            scan_counter = 0
+            while True:
+                scan_counter += 1
+
                 # Check for cards
-                (status, TagType) = rfid.MFRC522_Request(rfid.PICC_REQIDL)
-                
-                if status == rfid.MI_OK:
-                    current_time = time.time()
-                    # Only process if it's been at least 1 second since last read
-                    if current_time - last_read_time >= 1:
-                        print("\nCard detected!")
-                        feedback.led.on()
-                        feedback.onboard_led.on()
-                        
-                        # Get the UID of the card
-                        (status, uid) = rfid.MFRC522_Anticoll()
-                        
-                        if status == rfid.MI_OK:
-                            # Print the UID
-                            print("Card UID: ", end="")
-                            uid_str = ""
-                            for i in range(0, len(uid)-1):
-                                uid_str += f"{uid[i]:02x}:"
-                                print(f"{uid[i]:02x}", end=":")
-                            uid_str += f"{uid[-1]:02x}"
-                            print(f"{uid[-1]:02x}")
-                            
-                            last_read_time = current_time
-                            
-                            # Success feedback
-                            feedback.success_feedback()
-                        else:
-                            print("Error reading card UID")
-                            feedback.error_feedback()
-                        
-                        feedback.led.off()
-                        feedback.onboard_led.off()
-                
-            except Exception as e:
-                print(f"Error during card reading: {e}")
-                feedback.error_feedback()
-                time.sleep(1)
-            
-            time.sleep(0.1)
-            
-    except Exception as e:
-        print(f"Initialization error: {e}")
-        if 'feedback' in locals():
-            feedback.error_feedback()
-        
+                (status, TagType) = self.rfid.MFRC522_Request(self.rfid.PICC_REQIDL)
+
+                if status == self.rfid.MI_OK:
+                    # Card detected, get UID
+                    (status, uid) = self.rfid.MFRC522_Anticoll()
+                    if status == self.rfid.MI_OK:
+                        # Successful detection
+                        self.consecutive_detections += 1
+                        self.consecutive_failures = 0
+
+                        # Process card with strict duplicate prevention
+                        card_id = self.format_uid(uid)
+
+                        # Only process if it's a genuinely new card or hasn't been processed yet
+                        should_process = False
+                        current_time = time.time()
+
+                        if card_id != self.current_card:
+                            # Different card, always process
+                            should_process = True
+                        elif not self.card_processed:
+                            # Same card but not processed yet, process it
+                            should_process = True
+                        # If same card and already processed, do NOT process again
+
+                        if should_process:
+                            self.card_present = True
+                            self.process_card(card_id)
+                            self.card_processed = True  # Mark as processed
+
+                    else:
+                        # Failed UID read
+                        self.consecutive_failures += 1
+                        self.consecutive_detections = 0
+                else:
+                    # No card detected
+                    self.consecutive_failures += 1
+                    self.consecutive_detections = 0
+
+                # Check for card removal
+                if self.consecutive_failures >= self.REMOVAL_THRESHOLD and self.card_present:
+                    self.card_present = False
+                    self.card_processed = False  # Reset processed flag
+                    if self.current_card:
+                        self.trigger_card_removal(self.current_card)
+                        print("Card removed")
+                        # Keep current_card for potential re-placement detection
+
+                # Memory management
+                self.gc_counter += 1
+                if self.gc_counter >= self.GC_INTERVAL:
+                    gc.collect()
+                    self.gc_counter = 0
+
+                # Performance monitoring
+                if scan_counter % 300 == 0:  # Every 300 scans
+                    self.print_performance_stats()
+
+                # Optimized loop delay
+                time.sleep(0.03)  # Reduced from 0.1s to 0.03s for 33% faster scanning
+
+        except KeyboardInterrupt:
+            print("\nClient stopped")
+            print(f"Final stats: {self.scan_count} scans processed")
+            self.led.off()
+            self.onboard_led.off()
+            self.buzzer.duty_u16(0)
+
+def main():
+    client = ExhibitionClientPico()
+    client.run()
+
 if __name__ == "__main__":
     main()
+    www,
+
