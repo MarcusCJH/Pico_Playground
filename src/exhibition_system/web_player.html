@@ -220,7 +220,8 @@
             transition: opacity 0.3s ease;
         }
 
-        @media (max-width: 768px) {
+        /* Show navigation overlay on touch/mobile devices (any orientation) */
+        @media (pointer: coarse) {
             #navigationControls {
                 display: flex;
             }
@@ -232,8 +233,8 @@
             pointer-events: auto;
         }
 
-        /* Hide navigation overlay on desktop/web (never show on large screens) */
-        @media (min-width: 769px) {
+        /* Hide navigation overlay on desktop (mouse/fine pointer) */
+        @media (pointer: fine) {
             #navigationControls,
             #navigationControls.visible {
                 display: none !important;
@@ -696,11 +697,17 @@
                 toggleContainer.innerHTML = `
                     Navigation Controls
                     <label class="switch">
-                        <input type="checkbox" id="navigationToggle" onchange="window.player.toggleNavigation(this.checked)" checked>
+                        <input type="checkbox" id="navigationToggle" onchange="window.player.toggleNavigation(this.checked)">
                         <span class="slider"></span>
                     </label>
                 `;
                 advancedControls.insertBefore(toggleContainer, advancedControls.firstChild);
+
+                // Default navigation on for mobile (touch), off for desktop (web browser)
+                const navToggle = document.getElementById('navigationToggle');
+                if (navToggle && window.matchMedia('(pointer: coarse)').matches) {
+                    navToggle.checked = true;
+                }
 
                 this.updateRfidSimulator();
             }
